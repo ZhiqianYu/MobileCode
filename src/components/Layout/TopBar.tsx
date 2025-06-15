@@ -1,3 +1,8 @@
+// src/components/Layout/TopBar.tsx
+// 功能：顶部导航栏，显示连接状态、快捷操作按钮和清空终端按钮
+// 依赖：ViewMode类型, React Native组件
+// 被使用：MainScreen
+
 import React from 'react';
 import {
   View,
@@ -72,6 +77,8 @@ const TopBar: React.FC<TopBarProps> = ({
         >
           <Text style={styles.quickIcon}>💻</Text>
         </TouchableOpacity>
+
+        {/* 移除了清空终端按钮 */}
         
         <TouchableOpacity 
           onPress={onSettingsPress}

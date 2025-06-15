@@ -1,37 +1,41 @@
-// src/screens/MainScreen.tsx - 带Modal设置弹窗版本
-import React, { useEffect, useState } from 'react';
-import Settings from '../components/Settings/Settings';
+// src/screens/MainScreen.tsx
+// 功能：应用主界面，管理抽屉式连接管理和设置
+// 依赖：SSHContext, TopBar, MainContent, DrawerConnectionManager, DrawerSettings
+// 被使用：App.tsx
+
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import {
   View,
+  Text,
   StyleSheet,
   SafeAreaView,
-  Alert,
-  Text,
-  Modal,
-  TouchableOpacity,
+  StatusBar,
 } from 'react-native';
-import { useAppState } from '../hooks/useAppState';
 import { useSSHContext } from '../contexts/SSHContext';
+import { ViewMode } from '../types/ui';
 import TopBar from '../components/Layout/TopBar';
 import MainContent from '../components/Layout/MainContent';
+import DrawerConnectionManager from '../components/Drawer/DrawerConnectionManager';
+import DrawerSettings from '../components/Drawer/DrawerSettings';
 
 const MainScreen: React.FC = () => {
-  const { 
-    state, 
-    setCurrentView, 
-    toggleSidebar, 
-    toggleSettings,
-  } = useAppState();
-  
   const { 
     currentConnection, 
     isConnected, 
     isConnecting, 
     ping, 
     error,
-    connect,
-    disconnect,
   } = useSSHContext();
+
+  // 当前选择的功能视图
+  const [currentView, setCurrentView] = useState<ViewMode>('terminal');
+  
+  // 抽屉状态
+  const [connectionDrawerVisible, setConnectionDrawerVisible] = useState(false);
+  const [settingsDrawerVisible, setSettingsDrawerVisible] = useState(false);
+  
+  // 终端引用，用于将来的功能扩展
+  const terminalRef = useRef<any>(null);
 
   // 监听连接错误
   useEffect(() => {
@@ -40,33 +44,35 @@ const MainScreen: React.FC = () => {
     }
   }, [error, isConnecting]);
 
-  const handleMenuPress = () => {
-    toggleSidebar();
-    Alert.alert(
-      '连接管理', 
-      '功能开发中...\n\n将来这里会显示:\n• 保存的连接列表\n• 快速切换连接\n• 连接历史记录',
-      [{ text: '知道了' }]
-    );
-  };
+  // 处理菜单按钮 - 打开连接抽屉
+  const handleMenuPress = useCallback(() => {
+    setConnectionDrawerVisible(true);
+  }, []);
 
-  const handleSettingsPress = () => {
-    toggleSettings();
-  };
+  // 处理设置按钮 - 打开设置抽屉
+  const handleSettingsPress = useCallback(() => {
+    setSettingsDrawerVisible(true);
+  }, []);
 
-  // TopBar快捷按钮处理 - 普通切换，不隐藏底部栏
-  const handleQuickViewChange = (view: typeof state.currentView) => {
+  // 处理快速视图切换
+  const handleQuickViewChange = useCallback((view: ViewMode) => {
     setCurrentView(view);
-  };
+  }, []);
 
+  // 连接成功后的回调 - 关闭连接抽屉
+  const handleConnectionSuccess = useCallback(() => {
+    setConnectionDrawerVisible(false);
+  }, []);
+
+  // 获取显示信息
   const getDisplayUser = (): string => {
-    // 只有在连接时才显示用户名
     return (isConnected && currentConnection?.username) || 'user';
   };
 
   const getDisplayHost = (): string => {
     console.log('getDisplayHost check:', { 
       isConnecting, 
-      isConnected, // 添加这个检查
+      isConnected,
       currentConnection: currentConnection?.host || 'null',
       connectionId: currentConnection?.id || 'no-id'
     });
@@ -75,13 +81,11 @@ const MainScreen: React.FC = () => {
       return '连接中...';
     }
     
-    // 只有在连接时才显示主机名
     return (isConnected && currentConnection?.host) || '未连接';
   };
 
   const getDisplayPing = (): number => {
     console.log('Ping check:', { isConnected, ping });
-    // 只有在连接时才显示延迟
     return (isConnected && ping) ? ping : 0;
   };
 
@@ -91,8 +95,10 @@ const MainScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar backgroundColor="#1a1a1a" barStyle="light-content" hidden={true} />
+      
       <View style={styles.content}>
-        {/* TopBar 层 */}
+        {/* TopBar 层 - 包含所有快捷功能按钮 */}
         <TopBar
           user={getDisplayUser()}
           host={getDisplayHost()}
@@ -103,8 +109,14 @@ const MainScreen: React.FC = () => {
           onQuickViewChange={handleQuickViewChange}
         />
 
-        {/* 主要内容层 - 占用剩余空间 */}
-        <MainContent currentView={state.currentView} />
+        {/* 主要内容层 - 根据当前视图显示不同功能 */}
+        <MainContent 
+          currentView={currentView} 
+          terminalRef={terminalRef}
+          isConnected={isConnected}
+          isConnecting={isConnecting}
+          currentConnection={currentConnection}
+        />
       </View>
 
       {/* 连接状态覆盖层 */}
@@ -124,11 +136,17 @@ const MainScreen: React.FC = () => {
         </View>
       )}
 
-      {/* Settings组件 */}
-      <Settings
-        visible={state.settingsVisible}
-        onClose={toggleSettings}
-        onViewChange={setCurrentView}
+      {/* 抽屉式连接管理 */}
+      <DrawerConnectionManager
+        visible={connectionDrawerVisible}
+        onClose={() => setConnectionDrawerVisible(false)}
+        onConnectionSuccess={handleConnectionSuccess}
+      />
+
+      {/* 抽屉式设置 */}
+      <DrawerSettings
+        visible={settingsDrawerVisible}
+        onClose={() => setSettingsDrawerVisible(false)}
       />
     </SafeAreaView>
   );
@@ -138,7 +156,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a1a',
-
   },
   content: {
     flex: 1,

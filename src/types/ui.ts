@@ -1,8 +1,6 @@
-// src/types/ui.ts - 简化版本
-export type ViewMode = 'file' | 'editor' | 'terminal' | 'forward';
+// src/types/ui.ts
+// 功能：UI相关的类型定义
+// 依赖：无
+// 被使用：TopBar, NavigationContext
 
-export interface AppState {
-  currentView: ViewMode;
-  sidebarVisible: boolean;
-  settingsVisible: boolean;
-}
+export type ViewMode = 'file' | 'editor' | 'terminal' | 'forward';

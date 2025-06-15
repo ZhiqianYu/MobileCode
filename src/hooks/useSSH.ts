@@ -1,7 +1,11 @@
-// src/hooks/useSSH.ts - 改进的历史记录恢复版本
+// src/hooks/useSSH.ts
+// 功能：SSH连接状态管理，暂时使用EnhancedMockSSHService进行终端测试
+// 依赖：EnhancedMockSSHService, SSHConnection类型, TerminalOutput类型
+// 被使用：SSHContext, Terminal组件
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { SSHConnection, TerminalOutput, ConnectionStatus } from '../types/ssh';
-import SSHService from '../services/SSHService';
+import EnhancedMockSSHService from '../services/EnhancedMockSSHService';
 
 export const useSSH = () => {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
@@ -12,28 +16,18 @@ export const useSSH = () => {
   const [currentConnection, setCurrentConnection] = useState<SSHConnection | null>(null);
   
   const outputUnsubscribe = useRef<(() => void) | null>(null);
-  const statusUnsubscribe = useRef<(() => void) | null>(null);
   const isInitialized = useRef<boolean>(false);
 
-  // 初始化监听器
+  // 初始化输出监听器
   useEffect(() => {
-    // 清理旧的监听器
     if (outputUnsubscribe.current) {
       outputUnsubscribe.current();
     }
-    if (statusUnsubscribe.current) {
-      statusUnsubscribe.current();
-    }
-
-    // 首次挂载时，从服务恢复完整历史记录
-    if (!isInitialized.current) {
-      const fullHistory = SSHService.getFullHistory();
-      setTerminalHistory(fullHistory);
-      isInitialized.current = true;
-    }
 
     // 设置输出监听器
-    outputUnsubscribe.current = SSHService.onOutput((output: TerminalOutput) => {
+    outputUnsubscribe.current = EnhancedMockSSHService.onOutput((output: TerminalOutput) => {
+      console.log('Received SSH output:', output.content);
+      
       // 处理特殊的清空信号
       if (output.content === '__CLEAR_HISTORY__') {
         setTerminalHistory([]);
@@ -50,74 +44,130 @@ export const useSSH = () => {
       });
     });
 
-    // 设置状态监听器
-    statusUnsubscribe.current = SSHService.onStatusChange((status: ConnectionStatus) => {
-      setConnectionStatus(status);
-    });
-
     return () => {
       if (outputUnsubscribe.current) {
         outputUnsubscribe.current();
       }
-      if (statusUnsubscribe.current) {
-        statusUnsubscribe.current();
-      }
     };
-  }, []); // 只在组件挂载时执行一次
+  }, []);
 
   const connect = useCallback(async (config: SSHConnection): Promise<boolean> => {
     try {
-      console.log('useSSH connect called with:', config.host); // 添加调试
-      console.log('useSSH instance ID:', Math.random()); // 添加这行，看是否有多个实例
-      const success = await SSHService.connect(config);
-      console.log('SSHService.connect returned:', success); // 添加调试
+      console.log('=== SSH Connect Start ===');
+      console.log('Connecting to:', config.name, config.host);
+      
+      // 设置连接中状态
+      setConnectionStatus({
+        isConnecting: true,
+        isConnected: false,
+        error: undefined,
+      });
+
+      // 使用EnhancedMockSSHService进行连接
+      const success = await EnhancedMockSSHService.connect(config);
+      console.log('Connection result:', success);
+
       if (success) {
-        console.log('Setting currentConnection to:', config); // 添加调试
+        // 连接成功
         setCurrentConnection(config);
-        // 连接成功后，重新同步历史记录
-        console.log('currentConnection set completed'); // 添加这行
-        const fullHistory = SSHService.getFullHistory();
-        setTerminalHistory(fullHistory);
+        setConnectionStatus({
+          isConnecting: false,
+          isConnected: true,
+          error: undefined,
+          lastPing: 42, // 模拟延迟
+        });
+        
+        console.log('✓ Connection successful');
+        console.log('✓ Current connection set to:', config.name);
+        console.log('✓ Connection status: isConnected = true');
+      } else {
+        // 连接失败
+        setCurrentConnection(null);
+        setConnectionStatus({
+          isConnecting: false,
+          isConnected: false,
+          error: '连接失败',
+        });
+        console.log('✗ Connection failed');
       }
+
+      console.log('=== SSH Connect End ===');
       return success;
     } catch (error) {
-      console.error('Connection failed:', error);
+      console.error('SSH Connection error:', error);
+      setCurrentConnection(null);
+      setConnectionStatus({
+        isConnecting: false,
+        isConnected: false,
+        error: error instanceof Error ? error.message : '连接错误',
+      });
       return false;
     }
   }, []);
 
   const disconnect = useCallback(async (): Promise<void> => {
     try {
-      console.log('disconnect called, setting currentConnection to null');
-      await SSHService.disconnect();
-      setCurrentConnection(null); // 确保这行存在
-      // 断开连接后，保留历史记录显示
+      console.log('=== SSH Disconnect Start ===');
+      await EnhancedMockSSHService.disconnect();
+      
+      setCurrentConnection(null);
+      setConnectionStatus({
+        isConnecting: false,
+        isConnected: false,
+        error: undefined,
+      });
+      
+      console.log('✓ Disconnected successfully');
+      console.log('=== SSH Disconnect End ===');
     } catch (error) {
-      console.error('Disconnect failed:', error);
+      console.error('Disconnect error:', error);
+      // 强制重置状态
+      setCurrentConnection(null);
+      setConnectionStatus({
+        isConnecting: false,
+        isConnected: false,
+        error: undefined,
+      });
     }
   }, []);
 
-  const executeCommand = useCallback(async (command: string): Promise<void> => {
+  const writeToSSH = useCallback((data: string): void => {
     if (!connectionStatus.isConnected) {
-      throw new Error('Not connected to SSH server');
+      console.warn('Cannot write to SSH: not connected');
+      return;
     }
 
     try {
-      await SSHService.executeCommand(command);
+      console.log('Writing to SSH:', data);
+      EnhancedMockSSHService.writeToSSH(data);
     } catch (error) {
-      console.error('Command execution failed:', error);
-      throw error;
+      console.error('Failed to write to SSH:', error);
     }
   }, [connectionStatus.isConnected]);
 
+  const executeCommand = useCallback(async (command: string): Promise<void> => {
+    // 对于Enhanced Mock SSH，我们直接写入命令，让它处理
+    writeToSSH(command + '\r');
+  }, [writeToSSH]);
+
   const clearHistory = useCallback(() => {
-    // 使用服务的清空方法，确保状态同步
-    SSHService.clearHistory();
+    console.log('Clearing terminal history');
+    setTerminalHistory([]);
   }, []);
 
   const getRecentOutput = useCallback((count: number = 50): TerminalOutput[] => {
     return terminalHistory.slice(-count);
   }, [terminalHistory]);
+
+  // 调试：监听状态变化
+  useEffect(() => {
+    console.log('SSH Status updated:', {
+      isConnected: connectionStatus.isConnected,
+      isConnecting: connectionStatus.isConnecting,
+      currentConnection: currentConnection?.name || 'none',
+      historyLength: terminalHistory.length,
+    });
+  }, [connectionStatus, currentConnection, terminalHistory.length]);
 
   const canExecuteCommands = connectionStatus.isConnected && !connectionStatus.isConnecting;
 
@@ -132,6 +182,7 @@ export const useSSH = () => {
     connect,
     disconnect,
     executeCommand,
+    writeToSSH,
     clearHistory,
     getRecentOutput,
     
