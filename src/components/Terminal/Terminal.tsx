@@ -1,24 +1,24 @@
-// src/components/Terminal/Terminal.tsx - 完整实现版本
-import React, { useState, useRef, useEffect } from 'react';
+// src/components/Terminal/Terminal.tsx - 简化版本，移除底部导航栏隐藏机制
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Keyboard,
+  Dimensions,
 } from 'react-native';
 import { useSSH } from '../../hooks/useSSH';
-import { TerminalOutput } from '../../types/ssh';
+import TerminalDisplay from './TerminalDisplay';
+import QuickCommands from './QuickCommands';
+import CommandInput from './CommandInput';
 
 const Terminal: React.FC = () => {
   const [command, setCommand] = useState('');
   const [showQuickCommands, setShowQuickCommands] = useState(true);
-  const scrollViewRef = useRef<ScrollView>(null);
-  const textInputRef = useRef<TextInput>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   
   const {
     terminalHistory,
@@ -26,30 +26,36 @@ const Terminal: React.FC = () => {
     clearHistory,
     isConnected,
     isConnecting,
-    error,
     canExecuteCommands,
   } = useSSH();
 
-  const quickCommands = [
-    'ls -la',
-    'pwd',
-    'whoami',
-    'ps aux',
-    'df -h',
-    'free -m',
-    'uptime',
-    'clear',
-  ];
-
+  // 监听键盘显示/隐藏事件
   useEffect(() => {
-    if (scrollViewRef.current) {
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  }, [terminalHistory]);
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      (event) => {
+        console.log('键盘高度:', event.endCoordinates.height); // 添加这行调试
+        console.log('屏幕高度:', Dimensions.get('window').height); // 添加这行
+        setKeyboardVisible(true);
+        setKeyboardHeight(event.endCoordinates.height);
+      }
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        console.log('键盘隐藏'); // 添加这行调试
+        setKeyboardVisible(false);
+        setKeyboardHeight(0);
+      }
+    );
 
-  const handleExecuteCommand = async () => {
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
+
+  const handleExecuteCommand = useCallback(async () => {
     if (!command.trim()) return;
     
     const cmd = command.trim();
@@ -65,157 +71,85 @@ const Terminal: React.FC = () => {
     } catch (error) {
       Alert.alert('执行失败', error instanceof Error ? error.message : '未知错误');
     }
-  };
+  }, [command, executeCommand, clearHistory]);
 
-  const handleQuickCommand = (cmd: string) => {
+  const handleQuickCommand = useCallback((cmd: string) => {
     if (cmd === 'clear') {
       clearHistory();
       return;
     }
     
     setCommand(cmd);
+    // 立即执行快捷命令
     setTimeout(() => {
       handleExecuteCommand();
-    }, 100);
+    }, 0);
+  }, [clearHistory, handleExecuteCommand]);
+
+  const handleShowQuickCommands = () => {
+    setShowQuickCommands(true);
   };
 
-  const renderOutput = (output: TerminalOutput) => {
-    const getTextStyle = () => {
-      switch (output.type) {
-        case 'input':
-          return [styles.outputText, styles.inputText];
-        case 'error':
-          return [styles.outputText, styles.errorText];
-        case 'system':
-          return [styles.outputText, styles.systemText];
-        default:
-          return styles.outputText;
-      }
-    };
-
-    return (
-      <TouchableOpacity
-        key={output.id}
-        onLongPress={() => {
-          Alert.alert('复制', '复制功能待实现');
-        }}
-      >
-        <Text style={getTextStyle()}>{output.content}</Text>
-      </TouchableOpacity>
-    );
+  const handleHideQuickCommands = () => {
+    setShowQuickCommands(false);
   };
 
-  const renderConnectionStatus = () => {
-    if (isConnecting) {
-      return (
-        <View style={styles.statusContainer}>
-          <Text style={styles.connectingText}>正在连接...</Text>
-        </View>
-      );
-    }
-    
-    if (!isConnected) {
-      return (
-        <View style={styles.statusContainer}>
-          <Text style={styles.disconnectedText}>未连接</Text>
-          <Text style={styles.hintText}>请点击右上角设置按钮配置SSH连接</Text>
-        </View>
-      );
-    }
-    
-    return null;
-  };
+  const handleAddCommand = useCallback((newCommand: string) => {
+    console.log('Added new command:', newCommand);
+  }, []);
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      {renderConnectionStatus()}
-      
-      <ScrollView
-        ref={scrollViewRef}
-        style={styles.historyContainer}
-        showsVerticalScrollIndicator={false}
-      >
-        {terminalHistory.map(renderOutput)}
-        {isConnected && (
-          <View style={styles.promptContainer}>
-            <Text style={styles.promptText}>$ </Text>
-            <Text style={styles.cursorText}>█</Text>
-          </View>
-        )}
-      </ScrollView>
+    <View style={styles.container}>
+      {/* Terminal 显示区域 - 根据键盘调整高度 */}
+      <View style={[
+        styles.terminalContainer,
+        isConnected && {
+          paddingBottom: keyboardHeight > 0 
+            ? keyboardHeight + (showQuickCommands ? 100 : 60) // 有键盘：键盘高度 + 底部组件高度
+            : (showQuickCommands ? 100 : 60) // 无键盘：只预留底部组件高度
+        }
+      ]}>
+        <TerminalDisplay
+          terminalHistory={terminalHistory}
+          isConnected={isConnected}
+          isConnecting={isConnecting}
+          keyboardVisible={keyboardVisible}
+        />
+      </View>
 
-      {showQuickCommands && isConnected && (
-        <View style={styles.quickCommandsContainer}>
-          <View style={styles.quickCommandsHeader}>
-            <Text style={styles.quickCommandsTitle}>快捷命令</Text>
-            <TouchableOpacity
-              onPress={() => setShowQuickCommands(false)}
-              style={styles.hideButton}
-            >
-              <Text style={styles.hideButtonText}>隐藏</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.quickCommandsScroll}
-          >
-            {quickCommands.map((cmd, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.quickCommandButton}
-                onPress={() => handleQuickCommand(cmd)}
-              >
-                <Text style={styles.quickCommandText}>{cmd}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-
+      {/* 底部组件区域 - 绝对定位 */}
       {isConnected && (
-        <View style={styles.inputContainer}>
-          {!showQuickCommands && (
-            <TouchableOpacity
-              onPress={() => setShowQuickCommands(true)}
-              style={styles.showQuickButton}
-            >
-              <Text style={styles.showQuickButtonText}>⬆</Text>
-            </TouchableOpacity>
-          )}
-          
-          <View style={styles.inputRow}>
-            <Text style={styles.promptText}>$ </Text>
-            <TextInput
-              ref={textInputRef}
-              style={styles.commandInput}
-              value={command}
-              onChangeText={setCommand}
-              onSubmitEditing={handleExecuteCommand}
-              placeholder="输入命令..."
-              placeholderTextColor="#666"
-              editable={canExecuteCommands}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="send"
+        <View style={[
+          styles.bottomArea,
+          {
+            position: 'absolute',
+            bottom: keyboardHeight,
+            left: 0,
+            right: 0,
+          }
+        ]}>
+          {/* 快捷命令层 - 可选显示 */}
+          {showQuickCommands && (
+            <QuickCommands
+              onCommandSelect={handleQuickCommand}
+              onHide={handleHideQuickCommands}
+              currentCommand={command}
+              onAddCommand={handleAddCommand}
             />
-            <TouchableOpacity
-              style={[
-                styles.sendButton,
-                !canExecuteCommands && styles.sendButtonDisabled
-              ]}
-              onPress={handleExecuteCommand}
-              disabled={!canExecuteCommands}
-            >
-              <Text style={styles.sendButtonText}>发送</Text>
-            </TouchableOpacity>
-          </View>
+          )}
+
+          {/* 命令输入层 - 始终显示 */}
+          <CommandInput
+            command={command}
+            onCommandChange={setCommand}
+            onExecuteCommand={handleExecuteCommand}
+            canExecuteCommands={canExecuteCommands}
+            showQuickCommands={showQuickCommands}
+            onShowQuickCommands={handleShowQuickCommands}
+          />
         </View>
       )}
-    </KeyboardAvoidingView>
+    </View>
   );
 };
 
@@ -224,141 +158,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0c0c0c',
   },
-  statusContainer: {
-    padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+  terminalContainer: {
     flex: 1,
+    backgroundColor: '#0c0c0c',
   },
-  connectingText: {
-    color: '#ffa500',
-    fontSize: 16,
-  },
-  disconnectedText: {
-    color: '#ff6b6b',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  hintText: {
-    color: '#666',
-    fontSize: 14,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  historyContainer: {
-    flex: 1,
-    padding: 16,
-  },
-  outputText: {
-    color: '#00ff00',
-    fontSize: 14,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    marginBottom: 2,
-  },
-  inputText: {
-    color: '#fff',
-  },
-  errorText: {
-    color: '#ff6b6b',
-  },
-  systemText: {
-    color: '#ffa500',
-  },
-  promptContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  promptText: {
-    color: '#00ff00',
-    fontSize: 14,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    fontWeight: 'bold',
-  },
-  cursorText: {
-    color: '#00ff00',
-    fontSize: 14,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  quickCommandsContainer: {
-    backgroundColor: '#1a1a1a',
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-    paddingVertical: 8,
-  },
-  quickCommandsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    marginBottom: 8,
-  },
-  quickCommandsTitle: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  hideButton: {
-    padding: 4,
-  },
-  hideButtonText: {
-    color: '#666',
-    fontSize: 12,
-  },
-  quickCommandsScroll: {
-    paddingHorizontal: 16,
-  },
-  quickCommandButton: {
-    backgroundColor: '#333',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  quickCommandText: {
-    color: '#fff',
-    fontSize: 12,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  inputContainer: {
-    backgroundColor: '#1a1a1a',
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-  },
-  showQuickButton: {
-    alignSelf: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 16,
-  },
-  showQuickButtonText: {
-    color: '#666',
-    fontSize: 16,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-  },
-  commandInput: {
-    flex: 1,
-    color: '#fff',
-    fontSize: 14,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    marginLeft: 8,
-    marginRight: 12,
-  },
-  sendButton: {
-    backgroundColor: '#4CAF50',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 4,
-  },
-  sendButtonDisabled: {
-    backgroundColor: '#666',
-  },
-  sendButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
+  bottomArea: {
+    backgroundColor: '#0c0c0c',
+    flexShrink: 0,
   },
 });
 

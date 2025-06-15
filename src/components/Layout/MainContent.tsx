@@ -1,4 +1,4 @@
-// src/components/Layout/MainContent.tsx - 完整实现版本
+// src/components/Layout/MainContent.tsx - 简化版本
 import React from 'react';
 import {
   View,

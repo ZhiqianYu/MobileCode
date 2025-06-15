@@ -40,7 +40,7 @@ const TopBar: React.FC<TopBarProps> = ({
           {user}@{host}
         </Text>
         <Text style={[styles.pingText, { color: isConnected ? '#4CAF50' : '#F44336' }]}>
-          ({isConnected ? `${ping}ms` : 'disconnected'})
+          ({isConnected && ping > 0 ? `${ping}ms` : 'disconnected'})
         </Text>
       </View>
 
@@ -89,41 +89,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1e1e1e',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    marginTop: StatusBar.currentHeight || 0,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
   menuButton: {
-    padding: 8,
+    padding: 0,
+    marginTop: 0,
+    justifyContent: 'center',
   },
   menuIcon: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 30,
     fontWeight: 'bold',
   },
   connectionInfo: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 8,
   },
   connectionText: {
     color: '#fff',
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '700',
   },
   pingText: {
     fontSize: 12,
+    fontWeight: '500',
     marginTop: 2,
   },
   quickActions: {
     flexDirection: 'row',
   },
   quickButton: {
-    padding: 8,
-    marginLeft: 4,
+    padding: 5,
+    marginLeft: 0,
   },
   quickIcon: {
-    fontSize: 18,
+    fontSize: 20,
   },
 });
 

@@ -1,3 +1,4 @@
+// src/hooks/useAppState.ts - 简化版本，移除底部栏隐藏机制
 import { useState } from 'react';
 import { ViewMode } from '../types/ui';
 
@@ -31,5 +32,8 @@ export const useAppState = () => {
     setCurrentView,
     toggleSidebar,
     toggleSettings,
+    
+    // 便捷访问器
+    currentView: state.currentView,
   };
 };

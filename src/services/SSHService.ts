@@ -1,4 +1,4 @@
-// src/services/SSHService.ts - 完整实现版本
+// src/services/SSHService.ts - 持久化历史记录版本
 import { SSHConnection, TerminalOutput, ConnectionStatus } from '../types/ssh';
 
 class SSHService {
@@ -10,12 +10,30 @@ class SSHService {
   };
   private pingInterval: NodeJS.Timeout | null = null;
   private currentConfig: SSHConnection | null = null;
+  private idCounter: number = 0;
+  // 持久化存储历史记录
+  private persistentHistory: TerminalOutput[] = [];
+
+  // 生成唯一ID
+  private generateUniqueId(): string {
+    return `${Date.now()}-${++this.idCounter}`;
+  }
+
+  // 获取当前完整历史记录
+  getFullHistory(): TerminalOutput[] {
+    return [...this.persistentHistory];
+  }
 
   // 连接到SSH服务器
   async connect(config: SSHConnection): Promise<boolean> {
     try {
       this.updateStatus({ isConnecting: true, isConnected: false, error: undefined });
       this.currentConfig = config;
+
+      this.clearHistory(); // 新连接时清空旧的历史记录
+
+      // 重置ID计数器，避免重复
+      this.idCounter = 0;
 
       // 模拟网络测试
       const isReachable = await this.testNetworkConnectivity(config.host, config.port);
@@ -33,12 +51,15 @@ class SSHService {
         lastPing: await this.measureRealPing(config.host)
       });
 
-      this.emitOutput({
-        id: Date.now().toString(),
+      const connectOutput: TerminalOutput = {
+        id: this.generateUniqueId(),
         content: `✓ Connected to ${config.username}@${config.host}:${config.port}`,
         timestamp: new Date(),
         type: 'system',
-      });
+      };
+
+      this.addToPersistentHistory(connectOutput);
+      this.emitOutput(connectOutput);
 
       // 启动ping监控
       this.startRealPingMonitoring(config.host);
@@ -54,12 +75,15 @@ class SSHService {
         error: error instanceof Error ? error.message : 'Connection failed',
       });
 
-      this.emitOutput({
-        id: Date.now().toString(),
+      const errorOutput: TerminalOutput = {
+        id: this.generateUniqueId(),
         content: `✗ Connection failed: ${error}`,
         timestamp: new Date(),
         type: 'error',
-      });
+      };
+
+      this.addToPersistentHistory(errorOutput);
+      this.emitOutput(errorOutput);
 
       return false;
     }
@@ -72,29 +96,38 @@ class SSHService {
     }
 
     // 显示输入的命令
-    this.emitOutput({
-      id: Date.now().toString(),
+    const inputOutput: TerminalOutput = {
+      id: this.generateUniqueId(),
       content: `$ ${command}`,
       timestamp: new Date(),
       type: 'input',
-    });
+    };
+
+    this.addToPersistentHistory(inputOutput);
+    this.emitOutput(inputOutput);
 
     try {
       const output = await this.executeRealCommand(command);
       
-      this.emitOutput({
-        id: (Date.now() + 1).toString(),
+      const resultOutput: TerminalOutput = {
+        id: this.generateUniqueId(),
         content: output,
         timestamp: new Date(),
         type: 'output',
-      });
+      };
+
+      this.addToPersistentHistory(resultOutput);
+      this.emitOutput(resultOutput);
     } catch (error) {
-      this.emitOutput({
-        id: (Date.now() + 1).toString(),
+      const errorOutput: TerminalOutput = {
+        id: this.generateUniqueId(),
         content: `bash: ${command}: command not found`,
         timestamp: new Date(),
         type: 'error',
-      });
+      };
+
+      this.addToPersistentHistory(errorOutput);
+      this.emitOutput(errorOutput);
     }
   }
 
@@ -113,17 +146,47 @@ class SSHService {
       error: undefined,
     });
     
-    this.emitOutput({
-      id: Date.now().toString(),
+    const disconnectOutput: TerminalOutput = {
+      id: this.generateUniqueId(),
       content: '✓ Connection closed',
+      timestamp: new Date(),
+      type: 'system',
+    };
+
+    this.addToPersistentHistory(disconnectOutput);
+    this.emitOutput(disconnectOutput);
+  }
+
+  // 清空终端历史
+  clearHistory(): void {
+    this.persistentHistory = [];
+    // 通过发送特殊的清空信号
+    this.emitOutput({
+      id: this.generateUniqueId(),
+      content: '__CLEAR_HISTORY__',
       timestamp: new Date(),
       type: 'system',
     });
   }
 
+  // 添加到持久化历史记录
+  private addToPersistentHistory(output: TerminalOutput): void {
+    this.persistentHistory.push(output);
+    // 限制历史记录长度，避免内存泄漏
+    if (this.persistentHistory.length > 1000) {
+      this.persistentHistory = this.persistentHistory.slice(-500);
+    }
+  }
+
   // 监听输出
   onOutput(callback: (output: TerminalOutput) => void): () => void {
     this.outputCallbacks.push(callback);
+    
+    // 当新的监听器注册时，立即发送完整历史记录
+    this.persistentHistory.forEach(output => {
+      callback(output);
+    });
+    
     return () => {
       const index = this.outputCallbacks.indexOf(callback);
       if (index > -1) {
@@ -186,19 +249,25 @@ class SSHService {
   }
 
   private async initializeShell(): Promise<void> {
-    this.emitOutput({
-      id: Date.now().toString(),
+    const welcomeOutput: TerminalOutput = {
+      id: this.generateUniqueId(),
       content: 'Welcome to MobileCode Remote Terminal',
       timestamp: new Date(),
       type: 'system',
-    });
+    };
 
-    this.emitOutput({
-      id: (Date.now() + 1).toString(),
+    const hintOutput: TerminalOutput = {
+      id: this.generateUniqueId(),
       content: 'Type commands to interact with the remote server',
       timestamp: new Date(),
       type: 'system',
-    });
+    };
+
+    this.addToPersistentHistory(welcomeOutput);
+    this.emitOutput(welcomeOutput);
+    
+    this.addToPersistentHistory(hintOutput);
+    this.emitOutput(hintOutput);
   }
 
   private async measureRealPing(host: string): Promise<number> {

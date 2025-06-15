@@ -1,4 +1,4 @@
-// src/hooks/useSSH.ts - 完整实现版本
+// src/hooks/useSSH.ts - 改进的历史记录恢复版本
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { SSHConnection, TerminalOutput, ConnectionStatus } from '../types/ssh';
 import SSHService from '../services/SSHService';
@@ -13,29 +13,66 @@ export const useSSH = () => {
   
   const outputUnsubscribe = useRef<(() => void) | null>(null);
   const statusUnsubscribe = useRef<(() => void) | null>(null);
+  const isInitialized = useRef<boolean>(false);
 
   // 初始化监听器
   useEffect(() => {
+    // 清理旧的监听器
+    if (outputUnsubscribe.current) {
+      outputUnsubscribe.current();
+    }
+    if (statusUnsubscribe.current) {
+      statusUnsubscribe.current();
+    }
+
+    // 首次挂载时，从服务恢复完整历史记录
+    if (!isInitialized.current) {
+      const fullHistory = SSHService.getFullHistory();
+      setTerminalHistory(fullHistory);
+      isInitialized.current = true;
+    }
+
+    // 设置输出监听器
     outputUnsubscribe.current = SSHService.onOutput((output: TerminalOutput) => {
-      setTerminalHistory(prev => [...prev, output]);
+      // 处理特殊的清空信号
+      if (output.content === '__CLEAR_HISTORY__') {
+        setTerminalHistory([]);
+        return;
+      }
+      
+      setTerminalHistory(prev => {
+        // 确保不会添加重复的记录
+        const isDuplicate = prev.some(item => item.id === output.id);
+        if (isDuplicate) {
+          return prev;
+        }
+        return [...prev, output];
+      });
     });
 
+    // 设置状态监听器
     statusUnsubscribe.current = SSHService.onStatusChange((status: ConnectionStatus) => {
       setConnectionStatus(status);
     });
 
     return () => {
-      outputUnsubscribe.current?.();
-      statusUnsubscribe.current?.();
+      if (outputUnsubscribe.current) {
+        outputUnsubscribe.current();
+      }
+      if (statusUnsubscribe.current) {
+        statusUnsubscribe.current();
+      }
     };
-  }, []);
+  }, []); // 只在组件挂载时执行一次
 
   const connect = useCallback(async (config: SSHConnection): Promise<boolean> => {
     try {
       const success = await SSHService.connect(config);
       if (success) {
         setCurrentConnection(config);
-        setTerminalHistory([]);
+        // 连接成功后，重新同步历史记录
+        const fullHistory = SSHService.getFullHistory();
+        setTerminalHistory(fullHistory);
       }
       return success;
     } catch (error) {
@@ -48,6 +85,7 @@ export const useSSH = () => {
     try {
       await SSHService.disconnect();
       setCurrentConnection(null);
+      // 断开连接后，保留历史记录显示
     } catch (error) {
       console.error('Disconnect failed:', error);
     }
@@ -67,7 +105,8 @@ export const useSSH = () => {
   }, [connectionStatus.isConnected]);
 
   const clearHistory = useCallback(() => {
-    setTerminalHistory([]);
+    // 使用服务的清空方法，确保状态同步
+    SSHService.clearHistory();
   }, []);
 
   const getRecentOutput = useCallback((count: number = 50): TerminalOutput[] => {
