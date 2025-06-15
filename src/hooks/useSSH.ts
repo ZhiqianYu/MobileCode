@@ -67,10 +67,15 @@ export const useSSH = () => {
 
   const connect = useCallback(async (config: SSHConnection): Promise<boolean> => {
     try {
+      console.log('useSSH connect called with:', config.host); // 添加调试
+      console.log('useSSH instance ID:', Math.random()); // 添加这行，看是否有多个实例
       const success = await SSHService.connect(config);
+      console.log('SSHService.connect returned:', success); // 添加调试
       if (success) {
+        console.log('Setting currentConnection to:', config); // 添加调试
         setCurrentConnection(config);
         // 连接成功后，重新同步历史记录
+        console.log('currentConnection set completed'); // 添加这行
         const fullHistory = SSHService.getFullHistory();
         setTerminalHistory(fullHistory);
       }
@@ -83,8 +88,9 @@ export const useSSH = () => {
 
   const disconnect = useCallback(async (): Promise<void> => {
     try {
+      console.log('disconnect called, setting currentConnection to null');
       await SSHService.disconnect();
-      setCurrentConnection(null);
+      setCurrentConnection(null); // 确保这行存在
       // 断开连接后，保留历史记录显示
     } catch (error) {
       console.error('Disconnect failed:', error);

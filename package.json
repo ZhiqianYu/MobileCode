@@ -10,6 +10,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@dylankenneally/react-native-ssh-sftp": "^1.5.20",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native/new-app-screen": "0.80.0",
     "react": "19.1.0",

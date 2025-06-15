@@ -1,4 +1,4 @@
-// src/components/Terminal/CommandInput.tsx - 命令输入组件
+// src/components/Terminal/CommandInput.tsx - 清理版本
 import React, { useRef } from 'react';
 import {
   View,
@@ -16,6 +16,7 @@ interface CommandInputProps {
   canExecuteCommands: boolean;
   showQuickCommands: boolean;
   onShowQuickCommands: () => void;
+  placeholder?: string;
 }
 
 const CommandInput: React.FC<CommandInputProps> = ({
@@ -25,6 +26,7 @@ const CommandInput: React.FC<CommandInputProps> = ({
   canExecuteCommands,
   showQuickCommands,
   onShowQuickCommands,
+  placeholder = '输入命令...',
 }) => {
   const textInputRef = useRef<TextInput>(null);
 
@@ -38,7 +40,7 @@ const CommandInput: React.FC<CommandInputProps> = ({
           value={command}
           onChangeText={onCommandChange}
           onSubmitEditing={onExecuteCommand}
-          placeholder="输入命令..."
+          placeholder={placeholder}
           placeholderTextColor="#666"
           editable={canExecuteCommands}
           autoCapitalize="none"
@@ -47,7 +49,7 @@ const CommandInput: React.FC<CommandInputProps> = ({
           blurOnSubmit={false}
         />
         
-        {/* 快捷命令提示按钮 - 在发送按钮左边 */}
+        {/* 快捷命令提示按钮 */}
         {!showQuickCommands && (
           <TouchableOpacity
             style={styles.quickTipButton}

@@ -1,4 +1,4 @@
-// src/services/SSHService.ts - 持久化历史记录版本
+// src/services/SSHService.ts - 真实终端行为版本
 import { SSHConnection, TerminalOutput, ConnectionStatus } from '../types/ssh';
 
 class SSHService {
@@ -11,8 +11,21 @@ class SSHService {
   private pingInterval: NodeJS.Timeout | null = null;
   private currentConfig: SSHConnection | null = null;
   private idCounter: number = 0;
-  // 持久化存储历史记录
   private persistentHistory: TerminalOutput[] = [];
+  
+  // SSH相关
+  private sshClient: any = null;
+  private isShellActive: boolean = false;
+  
+  // 密码处理
+  private waitingForPassword: boolean = false;
+  private lastPasswordTime: number = 0;
+  
+  // 输出缓冲和提示符处理
+  private outputBuffer: string = '';
+  private flushTimer: NodeJS.Timeout | null = null;
+  private currentPrompt: string = '';
+  private promptPattern = /([a-zA-Z0-9@\-_.]+[#$])\s*$/;
 
   // 生成唯一ID
   private generateUniqueId(): string {
@@ -29,43 +42,40 @@ class SSHService {
     try {
       this.updateStatus({ isConnecting: true, isConnected: false, error: undefined });
       this.currentConfig = config;
-
-      this.clearHistory(); // 新连接时清空旧的历史记录
-
-      // 重置ID计数器，避免重复
       this.idCounter = 0;
 
-      // 模拟网络测试
-      const isReachable = await this.testNetworkConnectivity(config.host, config.port);
-      
-      if (!isReachable) {
-        throw new Error(`Cannot reach ${config.host}:${config.port}`);
-      }
+      // 清空历史记录
+      this.clearHistory();
 
-      // 模拟认证过程
-      await this.simulateAuthentication(config);
+      // 创建真实的SSH连接
+      const SSHClient = (await import('@dylankenneally/react-native-ssh-sftp')).default;
+      
+      if (config.privateKey) {
+        this.sshClient = await SSHClient.connectWithKey(
+          config.host,
+          config.port,
+          config.username,
+          config.privateKey,
+          config.password
+        );
+      } else {
+        this.sshClient = await SSHClient.connectWithPassword(
+          config.host,
+          config.port,
+          config.username,
+          config.password
+        );
+      }
 
       this.updateStatus({ 
         isConnecting: false, 
         isConnected: true, 
-        lastPing: await this.measureRealPing(config.host)
+        lastPing: 50
       });
 
-      const connectOutput: TerminalOutput = {
-        id: this.generateUniqueId(),
-        content: `✓ Connected to ${config.username}@${config.host}:${config.port}`,
-        timestamp: new Date(),
-        type: 'system',
-      };
-
-      this.addToPersistentHistory(connectOutput);
-      this.emitOutput(connectOutput);
-
-      // 启动ping监控
-      this.startRealPingMonitoring(config.host);
-      
-      // 发送欢迎信息
-      await this.initializeShell();
+      // 启动shell和监控
+      await this.startInteractiveShell();
+      this.startPingMonitoring();
 
       return true;
     } catch (error) {
@@ -89,78 +99,299 @@ class SSHService {
     }
   }
 
+  // 启动交互式shell
+  private async startInteractiveShell(): Promise<void> {
+    try {
+      // 启动shell
+      await new Promise<void>((resolve, reject) => {
+        this.sshClient.startShell('xterm', (error: any) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          this.isShellActive = true;
+          resolve();
+        });
+      });
+
+      // 监听shell输出
+      this.sshClient.on('Shell', (event: any) => {
+        if (event) {
+          this.bufferShellOutput(event);
+        }
+      });
+
+    } catch (error) {
+      throw new Error(`Failed to start shell: ${error}`);
+    }
+  }
+
+  // 缓冲shell输出处理
+  private bufferShellOutput(data: string): void {
+    this.outputBuffer += data;
+    
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+    }
+    
+    // 如果收到换行符或可能的提示符，立即处理
+    if (data.includes('\n') || this.promptPattern.test(data)) {
+      this.flushOutputBuffer();
+    } else {
+      // 短延迟处理密码提示等不带换行的输出
+      this.flushTimer = setTimeout(() => {
+        this.flushOutputBuffer();
+      }, 150);
+    }
+  }
+
+  // 刷新输出缓冲区
+  private flushOutputBuffer(): void {
+    if (this.outputBuffer.trim()) {
+      this.handleShellOutput(this.outputBuffer);
+      this.outputBuffer = '';
+    }
+    
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+  }
+
+  // 处理shell输出
+  private handleShellOutput(data: string): void {
+    // 清理ANSI转义序列
+    let cleanData = data
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '')
+      .replace(/\u001b\]0;[^\u0007]*\u0007/g, '')
+      .replace(/\u001b\[\?[0-9]+[hl]/g, '')
+      .replace(/\u001b\[[0-9;]*[JKm]/g, '');
+
+    // 检测密码提示
+    const isPasswordPrompt = cleanData.includes('密码：') || 
+                            cleanData.includes('[sudo] password for') || 
+                            cleanData.includes('Password:');
+    
+    // 处理密码提示
+    if (isPasswordPrompt) {
+      this.handlePasswordPrompt();
+      
+      // 显示密码提示
+      const output: TerminalOutput = {
+        id: this.generateUniqueId(),
+        content: cleanData.trim(),
+        timestamp: new Date(),
+        type: 'system',
+      };
+      this.addToPersistentHistory(output);
+      this.emitOutput(output);
+      return;
+    }
+
+    // 检测并处理提示符
+    const promptMatch = cleanData.match(this.promptPattern);
+    if (promptMatch && cleanData.trim().endsWith(promptMatch[1])) {
+      this.currentPrompt = promptMatch[1];
+      this.waitingForPassword = false;
+      
+      // 发送提示符更新事件
+      const promptOutput: TerminalOutput = {
+        id: this.generateUniqueId(),
+        content: `__PROMPT_UPDATE__${this.currentPrompt}`,
+        timestamp: new Date(),
+        type: 'system',
+      };
+      this.emitOutput(promptOutput);
+      return;
+    }
+
+    // 隐藏密码输入
+    if (this.waitingForPassword && 
+        cleanData.trim() === this.currentConfig?.password) {
+      const hiddenOutput: TerminalOutput = {
+        id: this.generateUniqueId(),
+        content: '',  // 密码完全不显示
+        timestamp: new Date(),
+        type: 'system',
+      };
+      this.addToPersistentHistory(hiddenOutput);
+      this.emitOutput(hiddenOutput);
+      return;
+    }
+
+    // 处理普通输出
+    if (cleanData.trim()) {
+      // 分行处理输出
+      const lines = cleanData.split('\n');
+      for (const line of lines) {
+        if (line.trim()) {
+          const output: TerminalOutput = {
+            id: this.generateUniqueId(),
+            content: line,
+            timestamp: new Date(),
+            type: 'output',
+          };
+          this.addToPersistentHistory(output);
+          this.emitOutput(output);
+        }
+      }
+    }
+  }
+
+  // 处理密码提示
+  private handlePasswordPrompt(): void {
+    const now = Date.now();
+    
+    // 防止重复发送密码
+    if (now - this.lastPasswordTime > 2000) {
+      this.waitingForPassword = true;
+      this.lastPasswordTime = now;
+      
+      // 自动发送密码
+      if (this.currentConfig?.password) {
+        setTimeout(() => {
+          this.sshClient.writeToShell(`${this.currentConfig.password}\n`, (error: any) => {
+            if (error) {
+              console.error('Error sending password:', error);
+            }
+          });
+        }, 100);
+      }
+    }
+  }
+
   // 执行命令
   async executeCommand(command: string): Promise<void> {
-    if (!this.currentStatus.isConnected) {
+    if (!this.currentStatus.isConnected || !this.sshClient) {
       throw new Error('Not connected to SSH server');
     }
 
-    // 显示输入的命令
-    const inputOutput: TerminalOutput = {
-      id: this.generateUniqueId(),
-      content: `$ ${command}`,
-      timestamp: new Date(),
-      type: 'input',
-    };
-
-    this.addToPersistentHistory(inputOutput);
-    this.emitOutput(inputOutput);
-
     try {
-      const output = await this.executeRealCommand(command);
-      
-      const resultOutput: TerminalOutput = {
-        id: this.generateUniqueId(),
-        content: output,
-        timestamp: new Date(),
-        type: 'output',
-      };
+      if (command.trim() === 'clear') {
+        this.clearHistory();
+        return;
+      }
 
-      this.addToPersistentHistory(resultOutput);
-      this.emitOutput(resultOutput);
+      if (this.isShellActive) {
+        // 发送命令到shell，让shell自然显示
+        await new Promise<void>((resolve, reject) => {
+          this.sshClient.writeToShell(`${command}\n`, (error: any) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
+      } else {
+        // 备用方案：使用普通execute
+        await new Promise<void>((resolve, reject) => {
+          this.sshClient.execute(command, (error: any, output: any) => {
+            if (error) {
+              const errorOutput: TerminalOutput = {
+                id: this.generateUniqueId(),
+                content: `Error: ${error}`,
+                timestamp: new Date(),
+                type: 'error',
+              };
+              this.addToPersistentHistory(errorOutput);
+              this.emitOutput(errorOutput);
+              reject(error);
+              return;
+            }
+
+            if (output) {
+              const resultOutput: TerminalOutput = {
+                id: this.generateUniqueId(),
+                content: output,
+                timestamp: new Date(),
+                type: 'output',
+              };
+              this.addToPersistentHistory(resultOutput);
+              this.emitOutput(resultOutput);
+            }
+            resolve();
+          });
+        });
+      }
     } catch (error) {
       const errorOutput: TerminalOutput = {
         id: this.generateUniqueId(),
-        content: `bash: ${command}: command not found`,
+        content: `Command failed: ${error}`,
         timestamp: new Date(),
         type: 'error',
       };
 
       this.addToPersistentHistory(errorOutput);
       this.emitOutput(errorOutput);
+      throw error;
     }
   }
 
   // 断开连接
   async disconnect(): Promise<void> {
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-      this.pingInterval = null;
+    try {
+      // 清理定时器
+      if (this.pingInterval) {
+        clearInterval(this.pingInterval);
+        this.pingInterval = null;
+      }
+      
+      if (this.flushTimer) {
+        clearTimeout(this.flushTimer);
+        this.flushTimer = null;
+      }
+
+      // 关闭SSH连接
+      if (this.sshClient) {
+        try {
+          if (this.isShellActive) {
+            this.sshClient.closeShell();
+            this.isShellActive = false;
+          }
+        } catch (error) {
+          // 忽略shell关闭错误
+        }
+
+        try {
+          await this.sshClient.disconnect();
+        } catch (error) {
+          // 忽略断开连接错误
+        }
+        
+        this.sshClient = null;
+      }
+
+      // 重置状态
+      this.currentConfig = null;
+      this.outputBuffer = '';
+      this.currentPrompt = '';
+      this.waitingForPassword = false;
+      
+      this.updateStatus({
+        isConnecting: false,
+        isConnected: false,
+        error: undefined,
+      });
+
+    } catch (error) {
+      // 强制重置
+      this.sshClient = null;
+      this.isShellActive = false;
+      this.currentConfig = null;
+      this.updateStatus({
+        isConnecting: false,
+        isConnected: false,
+        error: undefined,
+      });
     }
-
-    this.currentConfig = null;
-    
-    this.updateStatus({
-      isConnecting: false,
-      isConnected: false,
-      error: undefined,
-    });
-    
-    const disconnectOutput: TerminalOutput = {
-      id: this.generateUniqueId(),
-      content: '✓ Connection closed',
-      timestamp: new Date(),
-      type: 'system',
-    };
-
-    this.addToPersistentHistory(disconnectOutput);
-    this.emitOutput(disconnectOutput);
   }
 
   // 清空终端历史
   clearHistory(): void {
     this.persistentHistory = [];
-    // 通过发送特殊的清空信号
     this.emitOutput({
       id: this.generateUniqueId(),
       content: '__CLEAR_HISTORY__',
@@ -172,17 +403,49 @@ class SSHService {
   // 添加到持久化历史记录
   private addToPersistentHistory(output: TerminalOutput): void {
     this.persistentHistory.push(output);
-    // 限制历史记录长度，避免内存泄漏
     if (this.persistentHistory.length > 1000) {
       this.persistentHistory = this.persistentHistory.slice(-500);
     }
+  }
+
+  // 启动ping监控
+  private startPingMonitoring(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+    }
+
+    this.pingInterval = setInterval(async () => {
+      if (this.currentStatus.isConnected && this.sshClient) {
+        try {
+          const startTime = Date.now();
+          
+          await new Promise<void>((resolve, reject) => {
+            this.sshClient.execute('echo', (error: any, output: any) => {
+              if (error) {
+                reject(error);
+              } else {
+                resolve();
+              }
+            });
+          });
+          
+          const ping = Date.now() - startTime;
+          this.updateStatus({ lastPing: Math.min(ping, 999) });
+          
+        } catch (error) {
+          this.updateStatus({ 
+            lastPing: 999,
+            error: 'Connection may be unstable'
+          });
+        }
+      }
+    }, 5000);
   }
 
   // 监听输出
   onOutput(callback: (output: TerminalOutput) => void): () => void {
     this.outputCallbacks.push(callback);
     
-    // 当新的监听器注册时，立即发送完整历史记录
     this.persistentHistory.forEach(output => {
       callback(output);
     });
@@ -211,154 +474,11 @@ class SSHService {
     return { ...this.currentStatus };
   }
 
+  getCurrentPrompt(): string {
+    return this.currentPrompt;
+  }
+
   // 私有方法
-  private async testNetworkConnectivity(host: string, port: number): Promise<boolean> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-      await fetch('https://www.google.com', {
-        method: 'HEAD',
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      return true;
-    } catch (error) {
-      return this.isLocalIP(host);
-    }
-  }
-
-  private isLocalIP(host: string): boolean {
-    return host.startsWith('192.168.') || 
-           host.startsWith('10.') || 
-           host.startsWith('172.') ||
-           host === 'localhost' ||
-           host === '127.0.0.1';
-  }
-
-  private async simulateAuthentication(config: SSHConnection): Promise<void> {
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        if (config.username && (config.password || config.privateKey)) {
-          resolve();
-        } else {
-          reject(new Error('Invalid credentials'));
-        }
-      }, 1500);
-    });
-  }
-
-  private async initializeShell(): Promise<void> {
-    const welcomeOutput: TerminalOutput = {
-      id: this.generateUniqueId(),
-      content: 'Welcome to MobileCode Remote Terminal',
-      timestamp: new Date(),
-      type: 'system',
-    };
-
-    const hintOutput: TerminalOutput = {
-      id: this.generateUniqueId(),
-      content: 'Type commands to interact with the remote server',
-      timestamp: new Date(),
-      type: 'system',
-    };
-
-    this.addToPersistentHistory(welcomeOutput);
-    this.emitOutput(welcomeOutput);
-    
-    this.addToPersistentHistory(hintOutput);
-    this.emitOutput(hintOutput);
-  }
-
-  private async measureRealPing(host: string): Promise<number> {
-    const startTime = Date.now();
-    
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      
-      await fetch(`https://www.google.com`, {
-        method: 'HEAD',
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
-      const ping = Date.now() - startTime;
-      return Math.min(ping, 999);
-    } catch (error) {
-      return 999;
-    }
-  }
-
-  private startRealPingMonitoring(host: string): void {
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-    }
-
-    this.pingInterval = setInterval(async () => {
-      if (this.currentStatus.isConnected) {
-        try {
-          const ping = await this.measureRealPing(host);
-          this.updateStatus({ lastPing: ping });
-        } catch (error) {
-          this.updateStatus({ 
-            lastPing: 999,
-            error: 'High latency detected'
-          });
-        }
-      }
-    }, 3000);
-  }
-
-  private async executeRealCommand(command: string): Promise<string> {
-    return new Promise((resolve) => {
-      const delay = Math.random() * 500 + 200;
-      
-      setTimeout(() => {
-        const cmd = command.trim().toLowerCase();
-        
-        switch (cmd) {
-          case 'ls':
-          case 'ls -l':
-          case 'ls -la':
-            resolve('Documents  Downloads  Projects  README.md  app.js\nsrc        package.json  node_modules  .git');
-            break;
-          case 'pwd':
-            resolve('/home/developer');
-            break;
-          case 'whoami':
-            resolve(this.currentConfig?.username || 'developer');
-            break;
-          case 'date':
-            resolve(new Date().toLocaleString());
-            break;
-          case 'ps aux':
-            resolve('USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\nroot         1  0.0  0.1 168876 11784 ?        Ss   10:30   0:01 /sbin/init\ndeveloper 1234  0.5  2.1 456789 22456 pts/0    S+   14:25   0:02 node server.js');
-            break;
-          case 'df -h':
-            resolve('Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        50G   15G   32G  32% /\ntmpfs           4.0G     0  4.0G   0% /dev/shm');
-            break;
-          case 'free -m':
-            resolve('              total        used        free      shared  buff/cache   available\nMem:           7982        1205        5234          45        1542        6435\nSwap:          2047           0        2047');
-            break;
-          case 'uptime':
-            resolve(' 14:32:15 up  3:47,  2 users,  load average: 0.15, 0.21, 0.18');
-            break;
-          default:
-            if (cmd.startsWith('echo ')) {
-              resolve(command.substring(5));
-            } else if (cmd.includes('&&')) {
-              resolve('Multiple commands executed successfully');
-            } else if (cmd.startsWith('cd ')) {
-              resolve('Directory changed');
-            } else {
-              resolve(`Command executed: ${command}\nResult: Operation completed successfully`);
-            }
-        }
-      }, delay);
-    });
-  }
-
   private updateStatus(status: Partial<ConnectionStatus>): void {
     this.currentStatus = { ...this.currentStatus, ...status };
     this.statusCallbacks.forEach(callback => callback(this.currentStatus));

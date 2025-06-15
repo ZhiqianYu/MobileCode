@@ -48,3 +48,5 @@ npx react-native run-android
 
 # 如果Metro没有自动启动
 npx react-native start
+
+npx react-native log-android

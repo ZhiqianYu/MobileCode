@@ -93,6 +93,17 @@ android {
             keyPassword 'android'
         }
     }
+    // 添加这个packaging块来解决依赖冲突
+    packaging {
+        pickFirst '**/libc++_shared.so'
+        pickFirst '**/libjsc.so'
+        exclude 'META-INF/versions/9/OSGI-INF/MANIFEST.MF'
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/NOTICE.txt'
+    }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug

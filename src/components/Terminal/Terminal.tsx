@@ -1,13 +1,10 @@
-// src/components/Terminal/Terminal.tsx - 简化版本，移除底部导航栏隐藏机制
+// src/components/Terminal/Terminal.tsx - 真实终端行为版本
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
   Keyboard,
-  Dimensions,
 } from 'react-native';
 import { useSSH } from '../../hooks/useSSH';
 import TerminalDisplay from './TerminalDisplay';
@@ -18,7 +15,11 @@ const Terminal: React.FC = () => {
   const [command, setCommand] = useState('');
   const [showQuickCommands, setShowQuickCommands] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  
+  // 真实终端状态
+  const [currentPrompt, setCurrentPrompt] = useState('$ ');
+  const [showLivePrompt, setShowLivePrompt] = useState(false);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   
   const {
     terminalHistory,
@@ -33,19 +34,15 @@ const Terminal: React.FC = () => {
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
       'keyboardDidShow',
-      (event) => {
-        console.log('键盘高度:', event.endCoordinates.height); // 添加这行调试
-        console.log('屏幕高度:', Dimensions.get('window').height); // 添加这行
+      () => {
         setKeyboardVisible(true);
-        setKeyboardHeight(event.endCoordinates.height);
+        setShouldAutoScroll(true);
       }
     );
     const keyboardDidHideListener = Keyboard.addListener(
       'keyboardDidHide',
       () => {
-        console.log('键盘隐藏'); // 添加这行调试
         setKeyboardVisible(false);
-        setKeyboardHeight(0);
       }
     );
 
@@ -55,14 +52,43 @@ const Terminal: React.FC = () => {
     };
   }, []);
 
+  // 监听终端输出和提示符更新
+  useEffect(() => {
+    let filteredHistory = terminalHistory.filter(output => {
+      // 处理提示符更新事件
+      if (output.content.startsWith('__PROMPT_UPDATE__')) {
+        const prompt = output.content.replace('__PROMPT_UPDATE__', '');
+        setCurrentPrompt(prompt + ' ');
+        setShowLivePrompt(true);
+        setShouldAutoScroll(true);
+        return false; // 不显示在历史记录中
+      }
+      
+      // 过滤掉清空历史记录的信号
+      if (output.content === '__CLEAR_HISTORY__') {
+        setShowLivePrompt(false);
+        return false;
+      }
+      
+      return true;
+    });
+
+    // 如果有新输出，自动滚动到底部
+    if (filteredHistory.length > 0) {
+      setShouldAutoScroll(true);
+    }
+  }, [terminalHistory]);
+
   const handleExecuteCommand = useCallback(async () => {
     if (!command.trim()) return;
     
     const cmd = command.trim();
     setCommand('');
+    setShouldAutoScroll(true); // 执行命令时自动滚动
     
     if (cmd === 'clear') {
       clearHistory();
+      setShowLivePrompt(false);
       return;
     }
     
@@ -76,6 +102,7 @@ const Terminal: React.FC = () => {
   const handleQuickCommand = useCallback((cmd: string) => {
     if (cmd === 'clear') {
       clearHistory();
+      setShowLivePrompt(false);
       return;
     }
     
@@ -95,40 +122,60 @@ const Terminal: React.FC = () => {
   };
 
   const handleAddCommand = useCallback((newCommand: string) => {
-    console.log('Added new command:', newCommand);
+    // 添加新快捷命令的反馈
   }, []);
+
+  const handleCommandChange = useCallback((newCommand: string) => {
+    setCommand(newCommand);
+    // 输入时也可以触发轻微滚动调整
+    if (newCommand.length > 0) {
+      setShouldAutoScroll(true);
+    }
+  }, []);
+
+  // 过滤历史记录，移除特殊控制信号
+  const filteredHistory = terminalHistory.filter(output => 
+    !output.content.startsWith('__PROMPT_UPDATE__') && 
+    output.content !== '__CLEAR_HISTORY__'
+  );
 
   return (
     <View style={styles.container}>
-      {/* Terminal 显示区域 - 根据键盘调整高度 */}
+      {/* Terminal 显示区域 */}
       <View style={[
         styles.terminalContainer,
+        // 连接时为底部组件预留空间
         isConnected && {
-          paddingBottom: keyboardHeight > 0 
-            ? keyboardHeight + (showQuickCommands ? 100 : 60) // 有键盘：键盘高度 + 底部组件高度
-            : (showQuickCommands ? 100 : 60) // 无键盘：只预留底部组件高度
+          paddingBottom: keyboardVisible 
+            ? keyboardVisible + (showQuickCommands ? 100 : 60)
+            : (showQuickCommands ? 100 : 60)
         }
       ]}>
         <TerminalDisplay
-          terminalHistory={terminalHistory}
+          terminalHistory={filteredHistory}
           isConnected={isConnected}
           isConnecting={isConnecting}
           keyboardVisible={keyboardVisible}
+          currentPrompt={currentPrompt}
+          currentCommand={command}
+          showLivePrompt={showLivePrompt}
+          shouldAutoScroll={shouldAutoScroll}
+          onScrollComplete={() => setShouldAutoScroll(false)}
         />
       </View>
 
-      {/* 底部组件区域 - 绝对定位 */}
+      {/* 底部组件区域 - 只在连接时显示 */}
       {isConnected && (
         <View style={[
           styles.bottomArea,
           {
             position: 'absolute',
-            bottom: keyboardHeight,
+            bottom: keyboardVisible ? keyboardVisible : 0,
             left: 0,
             right: 0,
           }
         ]}>
-          {/* 快捷命令层 - 可选显示 */}
+          {/* 快捷命令层 */}
           {showQuickCommands && (
             <QuickCommands
               onCommandSelect={handleQuickCommand}
@@ -138,14 +185,15 @@ const Terminal: React.FC = () => {
             />
           )}
 
-          {/* 命令输入层 - 始终显示 */}
+          {/* 命令输入层 */}
           <CommandInput
             command={command}
-            onCommandChange={setCommand}
+            onCommandChange={handleCommandChange}
             onExecuteCommand={handleExecuteCommand}
             canExecuteCommands={canExecuteCommands}
             showQuickCommands={showQuickCommands}
             onShowQuickCommands={handleShowQuickCommands}
+            placeholder={showLivePrompt ? '' : '输入命令...'}
           />
         </View>
       )}
