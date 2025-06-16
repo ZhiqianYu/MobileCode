@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
   // 0号容器 - 抽屉主体
   drawerContainer: {
     position: 'absolute',
-    right: 0,
+    left: SCREEN_WIDTH - DRAWER_WIDTH, 
     top: VERTICAL_MARGIN,
     width: DRAWER_WIDTH,
     height: DRAWER_HEIGHT,
