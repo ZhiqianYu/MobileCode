@@ -52,9 +52,7 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     try {
       const jsonValue = JSON.stringify(newSettings);
       await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, jsonValue);
-      console.log('✓ Settings saved to storage');
     } catch (error) {
-      console.error('✗ Failed to save settings:', error);
       throw error;
     }
   };
@@ -63,7 +61,6 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
   const loadSettingsFromStorage = async () => {
     try {
       setIsLoading(true);
-      console.log('Loading settings from storage...');
       
       const jsonValue = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
       
@@ -72,13 +69,10 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
         // 合并默认设置，确保新增的设置项有默认值
         const mergedSettings = { ...DEFAULT_SETTINGS, ...loadedSettings };
         setSettings(mergedSettings);
-        console.log('✓ Loaded settings from storage');
       } else {
-        console.log('No stored settings found, using defaults');
         setSettings(DEFAULT_SETTINGS);
       }
     } catch (error) {
-      console.error('✗ Failed to load settings:', error);
       setSettings(DEFAULT_SETTINGS);
     } finally {
       setIsLoading(false);
@@ -91,13 +85,10 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     value: AppSettings[K]
   ): Promise<void> => {
     try {
-      console.log(`Updating setting: ${key} = ${value}`);
       const newSettings = { ...settings, [key]: value };
       setSettings(newSettings);
       await saveSettingsToStorage(newSettings);
-      console.log(`✓ Setting ${key} updated successfully`);
     } catch (error) {
-      console.error(`✗ Failed to update setting ${key}:`, error);
       throw error;
     }
   };
@@ -105,12 +96,9 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
   // 重置设置
   const resetSettings = async (): Promise<void> => {
     try {
-      console.log('Resetting settings to defaults');
       setSettings(DEFAULT_SETTINGS);
       await saveSettingsToStorage(DEFAULT_SETTINGS);
-      console.log('✓ Settings reset successfully');
     } catch (error) {
-      console.error('✗ Failed to reset settings:', error);
       throw error;
     }
   };
@@ -122,7 +110,6 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // 调试：监听设置变化
   useEffect(() => {
-    console.log('Settings updated:', settings);
   }, [settings]);
 
   return (

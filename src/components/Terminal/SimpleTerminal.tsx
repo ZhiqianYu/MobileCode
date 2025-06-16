@@ -1,35 +1,32 @@
-// src/components/Terminal/NewTerminal.tsx
-// 功能：集成XTermWebView和真正SSH服务的终端组件
-// 依赖：XTermWebView, useSSHContext, React Native
+// src/components/Terminal/SimpleTerminal.tsx
+// 功能：简化版终端组件，使用SimpleTerminalView显示
+// 依赖：SimpleTerminalView, useSSHContext, React Native
 // 被使用：MainScreen
 
 import React, { useRef, useCallback, useEffect, useState } from 'react';
 import {
   View,
   StyleSheet,
-  Alert,
-  Text,
-  TouchableOpacity,
 } from 'react-native';
 import { useSSHContext } from '../../contexts/SSHContext';
-import XTermWebView from './XTermWebView';
+import SimpleTerminalView from './SimpleTerminalView';
 
-const NewTerminal = React.forwardRef<any, {}>((props, ref) => {
+const SimpleTerminal = React.forwardRef<any, {}>((props, ref) => {
   const {
     terminalHistory,
     writeToSSH,
     isConnected,
     isConnecting,
     currentConnection,
-    disconnect,
   } = useSSHContext();
 
   const [terminalReady, setTerminalReady] = useState(false);
-  const xtermRef = useRef<any>(null);
+  const [displayHistory, setDisplayHistory] = useState<string[]>([]);
+  const terminalRef = useRef<any>(null);
 
   // 终端准备就绪
   const handleTerminalReady = useCallback(() => {
-    console.log('XTerm terminal ready');
+    console.log('Simple terminal ready');
     setTerminalReady(true);
   }, []);
 
@@ -38,46 +35,36 @@ const NewTerminal = React.forwardRef<any, {}>((props, ref) => {
     console.log('Terminal input received:', JSON.stringify(data));
     
     if (isConnected && writeToSSH) {
-      // 直接发送输入到SSH
       writeToSSH(data);
     } else {
       console.warn('Not connected to SSH, ignoring input');
     }
   }, [isConnected, writeToSSH]);
 
-  // 监听SSH输出并写入终端
+  // 将SSH输出转换为显示历史
   useEffect(() => {
-    if (!terminalReady || !xtermRef.current) {
-      return;
-    }
+    if (!terminalReady) return;
 
-    // 监听terminalHistory变化，将新输出写入终端
-    const lastOutput = terminalHistory[terminalHistory.length - 1];
-    if (lastOutput) {
-      console.log('Writing SSH output to terminal:', lastOutput.content);
-      xtermRef.current.writeToTerminal(lastOutput.content);
-    }
+    const newHistory = terminalHistory.map(output => output.content);
+    setDisplayHistory(newHistory);
   }, [terminalHistory, terminalReady]);
 
   // 连接状态变化时的处理
   useEffect(() => {
-    if (!terminalReady || !xtermRef.current) {
-      return;
-    }
+    if (!terminalReady) return;
 
     if (isConnected && currentConnection) {
       console.log('SSH connected, terminal ready for input');
     } else if (!isConnecting && !isConnected) {
       // 连接断开时显示提示
-      xtermRef.current.writeToTerminal('\r\n\x1b[31m✗ SSH connection lost\x1b[0m\r\n');
+      setDisplayHistory(prev => [...prev, '\r\n✗ SSH connection lost\r\n']);
     }
   }, [isConnected, isConnecting, currentConnection, terminalReady]);
 
   // 清空终端
   const handleClearTerminal = useCallback(() => {
-    if (xtermRef.current) {
-      xtermRef.current.clearTerminal();
-    }
+    setDisplayHistory([]);
+    console.log('Terminal history cleared');
   }, []);
 
   // 暴露方法给父组件
@@ -87,30 +74,25 @@ const NewTerminal = React.forwardRef<any, {}>((props, ref) => {
 
   return (
     <View style={styles.container}>
-      {/* XTerm 终端 - 直接占满全屏 */}
-      <View style={styles.terminalContainer}>
-        <XTermWebView
-          ref={xtermRef}
-          onTerminalReady={handleTerminalReady}
-          onInput={handleTerminalInput}
-          isConnected={isConnected}
-        />
-      </View>
+      <SimpleTerminalView
+        ref={terminalRef}
+        onTerminalReady={handleTerminalReady}
+        onInput={handleTerminalInput}
+        isConnected={isConnected}
+        terminalHistory={displayHistory}
+      />
     </View>
   );
 });
 
 // 设置display name用于调试
-NewTerminal.displayName = 'NewTerminal';
+SimpleTerminal.displayName = 'SimpleTerminal';
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0c0c0c',
   },
-  terminalContainer: {
-    flex: 1,
-  },
 });
 
-export default NewTerminal;
+export default SimpleTerminal;

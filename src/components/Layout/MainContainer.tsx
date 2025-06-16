@@ -1,5 +1,5 @@
 // src/components/Layout/MainContainer.tsx
-// 功能：0号容器，管理4个基础组件的布局，修复边距问题
+// 功能：0号容器，管理4个基础组件的布局，简化版仅支持点击显示/隐藏
 // 依赖：4个基础组件，布局状态管理，安全区域适配
 // 被使用：App.tsx
 
@@ -10,7 +10,9 @@ import {
   StatusBar,
   Dimensions,
   Platform,
-  UIManager,
+  TouchableOpacity,
+  Text,
+  Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -49,11 +51,15 @@ const MainContainer: React.FC = () => {
   // 屏幕尺寸
   const screenHeight = Dimensions.get('window').height;
   const screenWidth = Dimensions.get('window').width;
+
+  // 键盘高度状态
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   
   // 根据全屏设置计算实际可用高度
-  const availableHeight = settings.fullScreen 
+  const availableHeight = (settings.fullScreen 
     ? screenHeight  // 全屏模式使用全部高度
-    : screenHeight - insets.top - insets.bottom; // 普通模式扣除安全区域
+    : screenHeight - insets.top - insets.bottom) // 普通模式扣除安全区域
+    - keyboardHeight; // 扣除键盘高度
   
   // 当前激活的模块
   const [activeModule, setActiveModule] = useState<ModuleType>('terminal');
@@ -74,9 +80,7 @@ const MainContainer: React.FC = () => {
   const [sizeConfig, setSizeConfig] = useState<SizeConfig>('medium');
   
   // 动态控制状态栏和导航栏显示
-  useEffect(() => {
-    console.log('设置全屏模式:', settings.fullScreen);
-    
+  useEffect(() => {    
     // 控制状态栏
     StatusBar.setHidden(settings.fullScreen, 'slide');
     
@@ -85,42 +89,47 @@ const MainContainer: React.FC = () => {
       StatusBar.setBackgroundColor('#1a1a1a', true);
       StatusBar.setBarStyle('light-content', true);
       StatusBar.setTranslucent(false);
-      StatusBar.setHidden(false);
     } else {
       // 全屏模式：隐藏状态栏
       StatusBar.setBarStyle('light-content', true);
     }
     
-    // Android平台控制导航栏（需要安装 react-native-navigation-bar-color）
+    // Android平台控制导航栏
     if (Platform.OS === 'android') {
-      try {
-        // 导入导航栏控制库
-        const NavigationBar = require('react-native-navigation-bar-color').default;
-        
-        if (settings.fullScreen) {
-          // 全屏模式：隐藏导航栏
-          console.log('隐藏导航栏');
-          NavigationBar.hideNavigationBar();
-        } else {
-          // 非全屏模式：显示导航栏并设置颜色
-          console.log('显示导航栏');
-          NavigationBar.setNavigationBarColor('#1a1a1a', false, true);
-          NavigationBar.showNavigationBar();
-        }
-      } catch (error) {
-        console.log('导航栏控制库未安装，使用备选方案');
-        
-        // 备选方案：在设置中提示用户手动控制
-        if (settings.fullScreen) {
-          console.log('全屏模式：建议用户手动隐藏导航栏');
-        } else {
-          console.log('普通模式：建议用户显示导航栏');
-        }
+      const NavigationBar = require('react-native-navigation-bar-color');
+      
+      if (settings.fullScreen) {
+        // 全屏模式：隐藏导航栏
+        NavigationBar.hideNavigationBar();
+      } else {
+        // 非全屏模式：显示导航栏
+        NavigationBar.showNavigationBar();
       }
     }
-    
-    console.log('状态栏和导航栏配置完成');
   }, [settings.fullScreen]);
+
+  // 键盘事件监听
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+      }
+    );
+
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
+    // 清理监听器
+    return () => {
+      keyboardDidShowListener?.remove();
+      keyboardDidHideListener?.remove();
+    };
+  }, []);
   
   // 根据尺寸配置获取组件高度
   const getComponentHeights = () => {
@@ -192,31 +201,52 @@ const MainContainer: React.FC = () => {
 
   const positions = calculatePositions();
 
-  // 调试信息
-  useEffect(() => {
-    if (__DEV__) {
-      console.log('=== 布局位置计算 ===');
-      console.log('可用高度:', availableHeight);
-      console.log('组件高度:', heights);
-      console.log('可见性:', visibility);
-      console.log('计算位置:', positions);
-    }
-  }, [availableHeight, heights, visibility, positions]);
+  // 计算MainContent的实际尺寸（用于悬浮按钮定位）
+  const getMainContentBounds = () => {
+    const mainContentTop = heights.topBar;
+    let mainContentBottom = 0;
+    if (visibility.inputBar) mainContentBottom += heights.inputBar;
+    if (visibility.quickTool) mainContentBottom += heights.quickTool;
+    
+    const mainContentHeight = availableHeight - heights.topBar - mainContentBottom;
+    
+    return {
+      top: mainContentTop,
+      left: 0,
+      right: screenWidth,
+      bottom: mainContentTop + mainContentHeight,
+      width: screenWidth,
+      height: mainContentHeight,
+    };
+  };
+
+  // 计算悬浮按钮的固定位置（在MainContent范围内）
+  const getFloatingButtonPosition = (buttonType: 'quickTool' | 'inputBar') => {
+    const bounds = getMainContentBounds();
+    
+    // 固定位置：在MainContent区域内，距离边界16px
+    const positions = {
+      quickTool: {
+        right: 16, // 距离右边界16px
+        top: bounds.bottom - 40 - 16, // 距离MainContent底部16px（40是按钮高度）
+      },
+      inputBar: {
+        left: 16,  // 距离左边界16px
+        top: bounds.bottom - 40 - 16, // 距离MainContent底部16px
+      }
+    };
+
+    return positions[buttonType];
+  };
 
   // 切换快捷工具栏可见性
   const toggleQuickTool = () => {
-    setVisibility(prev => ({
-      ...prev,
-      quickTool: !prev.quickTool,
-    }));
+    setVisibility(prev => ({ ...prev, quickTool: !prev.quickTool }));
   };
 
   // 切换输入栏可见性
   const toggleInputBar = () => {
-    setVisibility(prev => ({
-      ...prev,
-      inputBar: !prev.inputBar,
-    }));
+    setVisibility(prev => ({ ...prev, inputBar: !prev.inputBar }));
   };
 
   // 切换模块
@@ -251,13 +281,11 @@ const MainContainer: React.FC = () => {
 
   // 处理快捷工具命令
   const handleQuickToolCommand = (command: string) => {
-    console.log('Quick tool command:', command);
     // TODO: 根据不同模块处理命令
   };
 
   // 处理输入栏发送
   const handleInputSend = (input: string) => {
-    console.log('Input sent:', input);
     // TODO: 根据不同模块处理输入
   };
 
@@ -272,14 +300,12 @@ const MainContainer: React.FC = () => {
       <View style={[
         styles.mainContainer, 
         { height: availableHeight },
-        __DEV__ && styles.debugMainContainer
       ]}>
         
         {/* 1. Top Bar - 绝对定位在顶部 */}
         <View style={[
           styles.absoluteComponent,
           positions.topBar,
-          __DEV__ && styles.debugTopBar
         ]}>
           <TopBarComponent
             activeModule={activeModule}
@@ -295,7 +321,6 @@ const MainContainer: React.FC = () => {
         <View style={[
           styles.absoluteComponent,
           positions.mainContent,
-          __DEV__ && styles.debugMainContent
         ]}>
           <MainContentComponent
             activeModule={activeModule}
@@ -309,7 +334,6 @@ const MainContainer: React.FC = () => {
           <View style={[
             styles.absoluteComponent,
             positions.quickTool,
-            __DEV__ && styles.debugQuickTool
           ]}>
             <QuickToolComponent
               activeModule={activeModule}
@@ -325,7 +349,6 @@ const MainContainer: React.FC = () => {
           <View style={[
             styles.absoluteComponent,
             positions.inputBar,
-            __DEV__ && styles.debugInputBar
           ]}>
             <InputBarComponent
               activeModule={activeModule}
@@ -334,6 +357,34 @@ const MainContainer: React.FC = () => {
               onSendInput={handleInputSend}
             />
           </View>
+        )}
+
+        {/* QuickTool 悬浮按钮 - 固定位置，仅点击功能 */}
+        {!visibility.quickTool && (
+          <TouchableOpacity
+            style={[
+              styles.floatingButton,
+              getFloatingButtonPosition('quickTool')
+            ]}
+            onPress={toggleQuickTool}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.floatingButtonIcon}>⚡</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* InputBar 悬浮按钮 - 固定位置，仅点击功能 */}
+        {!visibility.inputBar && (
+          <TouchableOpacity
+            style={[
+              styles.floatingButton,
+              getFloatingButtonPosition('inputBar')
+            ]}
+            onPress={toggleInputBar}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.floatingButtonIcon}>⌨️</Text>
+          </TouchableOpacity>
         )}
 
       </View>
@@ -379,6 +430,29 @@ const styles = StyleSheet.create({
   // 绝对定位组件的通用样式
   absoluteComponent: {
     position: 'absolute',
+  },
+
+  // 悬浮按钮样式 - 简化版，小尺寸，半透明
+  floatingButton: {
+    position: 'absolute',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#4CAF50',
+    opacity: 0.5, // 50% 透明度
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    zIndex: 1000,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  floatingButtonIcon: {
+    fontSize: 16, // 调小图标
+    marginBottom: 1,
+    color: '#fff',
   },
 });
 
