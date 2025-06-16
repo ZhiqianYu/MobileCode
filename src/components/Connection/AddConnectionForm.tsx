@@ -1,9 +1,9 @@
 // src/components/Connection/AddConnectionForm.tsx
-// 功能：重新设计的添加SSH连接表单，优化布局和交互
+// 功能：重新设计的添加/编辑SSH连接表单，支持新增和编辑模式
 // 依赖：ConnectionContext, SSHConnection类型
 // 被使用：DrawerConnectionManager
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,14 +22,19 @@ interface AddConnectionFormProps {
   visible: boolean;
   onClose: () => void;
   onConnectionAdded?: (connection: SSHConnection) => void;
+  // 新增编辑相关属性
+  editConnection?: SSHConnection | null; // 要编辑的连接，null表示新增模式
+  onConnectionUpdated?: (connection: SSHConnection) => void; // 编辑完成回调
 }
 
 const AddConnectionForm: React.FC<AddConnectionFormProps> = ({
   visible,
   onClose,
   onConnectionAdded,
+  editConnection,
+  onConnectionUpdated,
 }) => {
-  const { addConnection } = useConnections();
+  const { addConnection, updateConnection } = useConnections();
   
   // 表单状态
   const [formData, setFormData] = useState({
@@ -44,6 +49,29 @@ const AddConnectionForm: React.FC<AddConnectionFormProps> = ({
   const [authType, setAuthType] = useState<'password' | 'privateKey'>('password');
   const [saveCredentials, setSaveCredentials] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 判断是否为编辑模式
+  const isEditMode = !!editConnection;
+
+  // 当编辑连接或显示状态变化时，初始化表单数据
+  useEffect(() => {
+    if (editConnection && visible) {
+      // 编辑模式，预填充数据
+      setFormData({
+        name: editConnection.name,
+        host: editConnection.host,
+        port: editConnection.port.toString(),
+        username: editConnection.username,
+        password: editConnection.password || '',
+        privateKey: editConnection.privateKey || '',
+      });
+      setAuthType(editConnection.privateKey ? 'privateKey' : 'password');
+      setSaveCredentials(true); // 编辑时默认保存凭据
+    } else if (visible && !editConnection) {
+      // 新增模式，重置表单
+      resetForm();
+    }
+  }, [editConnection, visible]);
 
   // 重置表单
   const resetForm = () => {
@@ -62,7 +90,9 @@ const AddConnectionForm: React.FC<AddConnectionFormProps> = ({
 
   // 关闭表单
   const handleClose = () => {
-    resetForm();
+    if (!isEditMode) {
+      resetForm();
+    }
     onClose();
   };
 
@@ -123,31 +153,58 @@ const AddConnectionForm: React.FC<AddConnectionFormProps> = ({
     setIsSubmitting(true);
 
     try {
-      console.log('Creating new connection...');
-      
-      const newConnection: SSHConnection = {
-        id: `conn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        name: formData.name.trim(),
-        host: formData.host.trim(),
-        port: formData.port ? parseInt(formData.port) : 22,
-        username: formData.username.trim(),
-        password: authType === 'password' && saveCredentials ? formData.password : undefined,
-        privateKey: authType === 'privateKey' && saveCredentials ? formData.privateKey : undefined,
-        isConnected: false,
-        lastUsed: new Date(),
-        createdAt: new Date(),
-      };
+      if (isEditMode && editConnection) {
+        // 编辑模式 - 更新现有连接
+        console.log('Updating connection:', editConnection.name);
+        
+        const updatedConnection: SSHConnection = {
+          ...editConnection,
+          name: formData.name.trim(),
+          host: formData.host.trim(),
+          port: formData.port ? parseInt(formData.port) : 22,
+          username: formData.username.trim(),
+          password: authType === 'password' && saveCredentials ? formData.password : undefined,
+          privateKey: authType === 'privateKey' && saveCredentials ? formData.privateKey : undefined,
+          lastUsed: new Date(),
+        };
 
-      console.log('Saving connection:', newConnection.name);
-      await addConnection(newConnection);
-      console.log('Connection saved successfully');
+        await updateConnection(editConnection.id, updatedConnection);
+        console.log('Connection updated successfully');
 
-      onConnectionAdded?.(newConnection);
+        onConnectionUpdated?.(updatedConnection);
+        
+      } else {
+        // 新增模式 - 创建新连接
+        console.log('Creating new connection...');
+        
+        const newConnection: SSHConnection = {
+          id: `conn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          name: formData.name.trim(),
+          host: formData.host.trim(),
+          port: formData.port ? parseInt(formData.port) : 22,
+          username: formData.username.trim(),
+          password: authType === 'password' && saveCredentials ? formData.password : undefined,
+          privateKey: authType === 'privateKey' && saveCredentials ? formData.privateKey : undefined,
+          isConnected: false,
+          lastUsed: new Date(),
+          createdAt: new Date(),
+        };
+
+        console.log('Saving connection:', newConnection.name);
+        await addConnection(newConnection);
+        console.log('Connection saved successfully');
+
+        onConnectionAdded?.(newConnection);
+      }
+
       handleClose();
       
     } catch (error) {
-      console.error('Failed to save connection:', error);
-      Alert.alert('保存失败', '无法保存连接信息，请重试');
+      console.error(`Failed to ${isEditMode ? 'update' : 'save'} connection:`, error);
+      Alert.alert(
+        isEditMode ? '更新失败' : '保存失败', 
+        `无法${isEditMode ? '更新' : '保存'}连接信息，请重试`
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -169,7 +226,9 @@ const AddConnectionForm: React.FC<AddConnectionFormProps> = ({
           <View style={styles.modalContent}>
             {/* 头部 */}
             <View style={styles.header}>
-              <Text style={styles.headerTitle}>添加 SSH 连接</Text>
+              <Text style={styles.headerTitle}>
+                {isEditMode ? '编辑 SSH 连接' : '添加 SSH 连接'}
+              </Text>
               <TouchableOpacity onPress={handleClose}>
                 <Text style={styles.closeButton}>✕</Text>
               </TouchableOpacity>
@@ -321,7 +380,10 @@ const AddConnectionForm: React.FC<AddConnectionFormProps> = ({
                 disabled={isSubmitting}
               >
                 <Text style={styles.submitButtonText}>
-                  {isSubmitting ? '保存中...' : '保存连接'}
+                  {isSubmitting 
+                    ? (isEditMode ? '更新中...' : '保存中...') 
+                    : (isEditMode ? '更新连接' : '保存连接')
+                  }
                 </Text>
               </TouchableOpacity>
             </View>
@@ -372,8 +434,8 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     paddingHorizontal: 15,
-    paddingVertical: 5, // 减少上下内边距
-    flexShrink: 1, // 允许在需要时收缩
+    paddingVertical: 5,
+    flexShrink: 1,
   },
   formGroup: {
     marginBottom: 15,
@@ -404,7 +466,7 @@ const styles = StyleSheet.create({
     padding: 12,
     color: '#fff',
     fontSize: 16,
-    height: 48, // 统一高度
+    height: 48,
   },
   textInputDisabled: {
     backgroundColor: '#2a2a2a',
@@ -432,7 +494,7 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     borderRadius: 8,
     marginRight: 20,
-    flex: 1, // 让按钮稍微宽一些
+    flex: 1,
   },
   keyButtonText: {
     color: '#fff',
@@ -494,7 +556,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: 'bold',
   },
-  keyHeaderRow: {
+  passwordLabelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -512,12 +574,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     fontWeight: 'bold',
-  },
-  passwordLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 0, // 改为和 label 一样的间距
   },
 });
 

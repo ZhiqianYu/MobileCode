@@ -1,25 +1,28 @@
 // App.tsx
-// 功能：应用根组件，简化导航，主要显示MainScreen，由MainScreen管理抽屉
-// 依赖：SafeAreaProvider, SSH上下文, 连接管理上下文
-// 渲染：MainScreen（包含抽屉功能）
+// 功能：应用根组件，使用新的MainContainer布局框架
+// 依赖：SafeAreaProvider, MainContainer
+// 渲染：MainContainer（新的4组件布局）
 
 import React from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ConnectionProvider } from './src/contexts/ConnectionContext';
 import { SSHProvider } from './src/contexts/SSHContext';
-import MainScreen from './src/screens/MainScreen';
+import { SettingsProvider } from './src/contexts/SettingsContext';
+import MainContainer from './src/components/Layout/MainContainer';
 
 // 主应用组件
 export default function App() {
-  console.log('App starting...');
+  console.log('App starting with new MainContainer...');
   
   return (
     <SafeAreaProvider>
-      <ConnectionProvider>
-        <SSHProvider>
-          <MainScreen />
-        </SSHProvider>
-      </ConnectionProvider>
+      <SettingsProvider>
+        <ConnectionProvider>
+          <SSHProvider>
+            <MainContainer />
+          </SSHProvider>
+        </ConnectionProvider>
+      </SettingsProvider>
     </SafeAreaProvider>
   );
 }

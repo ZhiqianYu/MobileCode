@@ -1,7 +1,7 @@
-// src/components/Drawer/DrawerConnectionManager.tsx
-// 功能：抽屉式SSH连接管理，从左侧滑出的连接管理界面
-// 依赖：ConnectionContext, SSHContext, Modal, Animated
-// 被使用：MainScreen
+// src/components/Drawer/CleanDrawerConnection.tsx
+// 功能：简洁版连接抽屉，70%屏幕高度，上下居中，左边贴边
+// 依赖：ConnectionContext, SSHContext, CleanConnectionList
+// 被使用：MainContainer
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -13,24 +13,27 @@ import {
   Animated,
   Dimensions,
   TouchableWithoutFeedback,
-  StatusBar,
   Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useSSHContext } from '../../contexts/SSHContext';
 import { useConnections } from '../../contexts/ConnectionContext';
-import ConnectionList from '../Connection/ConnectionList';
+import { SSHConnection } from '../../types/ssh';
+import CleanConnectionList from '../Connection/CleanConnectionList';
 import AddConnectionForm from '../Connection/AddConnectionForm';
 
-interface DrawerConnectionManagerProps {
+interface CleanDrawerConnectionProps {
   visible: boolean;
   onClose: () => void;
-  onConnectionSuccess: () => void; // 连接成功后的回调
+  onConnectionSuccess: () => void;
 }
 
-const DRAWER_WIDTH = Dimensions.get('window').width * 0.85; // 抽屉宽度为屏幕的85%
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const DRAWER_HEIGHT = SCREEN_HEIGHT * 0.7; // 70% 屏幕高度
+const DRAWER_WIDTH = SCREEN_WIDTH * 0.72; // 72% 屏幕宽度
+const VERTICAL_MARGIN = (SCREEN_HEIGHT - DRAWER_HEIGHT) / 2; // 上下居中
 
-const DrawerConnectionManager: React.FC<DrawerConnectionManagerProps> = ({
+const CleanDrawerConnection: React.FC<CleanDrawerConnectionProps> = ({
   visible,
   onClose,
   onConnectionSuccess,
@@ -45,15 +48,22 @@ const DrawerConnectionManager: React.FC<DrawerConnectionManagerProps> = ({
   
   const { isLoading } = useConnections();
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editConnection, setEditConnection] = useState<SSHConnection | null>(null);
   
   // 动画值
   const slideAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
-  // 处理抽屉显示/隐藏动画
+  // 重置动画值
+  const resetAnimations = () => {
+    slideAnim.setValue(-DRAWER_WIDTH);
+    opacityAnim.setValue(0);
+  };
+
+  // 动画处理
   useEffect(() => {
     if (visible) {
-      // 显示动画
+      resetAnimations();
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 0,
@@ -67,7 +77,6 @@ const DrawerConnectionManager: React.FC<DrawerConnectionManagerProps> = ({
         }),
       ]).start();
     } else {
-      // 隐藏动画
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: -DRAWER_WIDTH,
@@ -79,9 +88,11 @@ const DrawerConnectionManager: React.FC<DrawerConnectionManagerProps> = ({
           duration: 250,
           useNativeDriver: true,
         }),
-      ]).start();
+      ]).start(() => {
+        if (!visible) resetAnimations();
+      });
     }
-  }, [visible, slideAnim, opacityAnim]);
+  }, [visible]);
 
   const handleDisconnect = async () => {
     Alert.alert(
@@ -105,9 +116,7 @@ const DrawerConnectionManager: React.FC<DrawerConnectionManagerProps> = ({
     );
   };
 
-  // 处理连接成功
-  const handleConnectionAdded = (connection: any) => {
-    console.log('New connection added:', connection.name);
+  const handleConnectionAdded = (connection: SSHConnection) => {
     Alert.alert(
       '连接已保存', 
       `连接 "${connection.name}" 已成功添加`,
@@ -119,7 +128,7 @@ const DrawerConnectionManager: React.FC<DrawerConnectionManagerProps> = ({
             try {
               const success = await connect(connection);
               if (success) {
-                onConnectionSuccess(); // 连接成功后关闭抽屉
+                onConnectionSuccess();
               }
             } catch (error) {
               Alert.alert('连接失败', '无法连接到服务器');
@@ -130,6 +139,21 @@ const DrawerConnectionManager: React.FC<DrawerConnectionManagerProps> = ({
     );
   };
 
+  const handleEditConnection = (connection: SSHConnection) => {
+    setEditConnection(connection);
+    setShowAddForm(true);
+  };
+
+  const handleAddNewConnection = () => {
+    setEditConnection(null);
+    setShowAddForm(true);
+  };
+
+  const handleCloseForm = () => {
+    setShowAddForm(false);
+    setEditConnection(null);
+  };
+
   return (
     <Modal
       visible={visible}
@@ -138,38 +162,31 @@ const DrawerConnectionManager: React.FC<DrawerConnectionManagerProps> = ({
       onRequestClose={onClose}
     >
       <View style={styles.container}>
-        <StatusBar backgroundColor="rgba(0,0,0,0.5)" barStyle="light-content" translucent />
-        
-        {/* 遮罩层 */}
+        {/* 背景遮罩 */}
         <TouchableWithoutFeedback onPress={onClose}>
-          <Animated.View 
-            style={[
-              styles.overlay,
-              { opacity: opacityAnim }
-            ]} 
-          />
+          <Animated.View style={[styles.overlay, { opacity: opacityAnim }]} />
         </TouchableWithoutFeedback>
 
-        {/* 抽屉内容 */}
+        {/* 0号容器 - 抽屉主体 */}
         <Animated.View 
           style={[
-            styles.drawer,
+            styles.drawerContainer,
             {
               transform: [{ translateX: slideAnim }],
             }
           ]}
         >
-          {/* 抽屉头部 */}
-          <View style={styles.drawerHeader}>
-            <Text style={styles.drawerTitle}>SSH 连接</Text>
+          {/* 1号 - 标题栏 */}
+          <View style={styles.headerContainer}>
+            <Text style={styles.headerTitle}>SSH 连接</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Text style={styles.closeButtonText}>✕</Text>
             </TouchableOpacity>
           </View>
 
-          {/* 连接状态栏 */}
+          {/* 连接状态栏（可选显示） */}
           {(isConnected || isConnecting) && (
-            <View style={styles.statusBar}>
+            <View style={styles.statusContainer}>
               <View style={styles.statusLeft}>
                 {isConnecting && (
                   <ActivityIndicator size="small" color="#ffa500" style={styles.statusSpinner} />
@@ -189,34 +206,36 @@ const DrawerConnectionManager: React.FC<DrawerConnectionManagerProps> = ({
             </View>
           )}
 
-          {/* 主要内容区域 */}
-          <View style={styles.drawerContent}>
+          {/* 2号 - 列表区域 */}
+          <View style={styles.listContainer}>
             {isLoading ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#4CAF50" />
                 <Text style={styles.loadingText}>加载连接列表...</Text>
               </View>
             ) : (
-                <ConnectionList />
+              <CleanConnectionList onEditConnection={handleEditConnection} />
             )}
           </View>
 
-          {/* 底部操作栏 */}
-          <View style={styles.bottomActions}>
+          {/* 3号 - 添加按钮 */}
+          <View style={styles.addContainer}>
             <TouchableOpacity 
               style={styles.addButton}
-              onPress={() => setShowAddForm(true)}
+              onPress={handleAddNewConnection}
             >
               <Text style={styles.addButtonText}>+ 添加新连接</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
 
-        {/* 添加连接表单 */}
+        {/* 添加/编辑连接表单 */}
         <AddConnectionForm
           visible={showAddForm}
-          onClose={() => setShowAddForm(false)}
+          onClose={handleCloseForm}
           onConnectionAdded={handleConnectionAdded}
+          editConnection={editConnection}
+          onConnectionUpdated={(connection) => console.log('Updated:', connection.name)}
         />
       </View>
     </Modal>
@@ -233,57 +252,66 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
-  drawer: {
+  
+  // 0号容器 - 抽屉主体
+  drawerContainer: {
     position: 'absolute',
     left: 0,
-    top: 0,
-    bottom: 0,
+    top: VERTICAL_MARGIN,
     width: DRAWER_WIDTH,
+    height: DRAWER_HEIGHT,
     backgroundColor: '#1a1a1a',
-    borderTopRightRadius: 16,
-    borderBottomRightRadius: 16,
-    elevation: 16,
+    borderTopRightRadius: 20,
+    borderBottomRightRadius: 20,
+    elevation: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 2, height: 0 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
+    shadowOffset: { width: 5, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 15,
+    overflow: 'hidden',
+    flexDirection: 'column',
   },
-  drawerHeader: {
+  
+  // 1号 - 标题栏（固定高度）
+  headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    paddingTop: (StatusBar.currentHeight || 0) + 16,
+    paddingVertical: 0,
+    backgroundColor: '#2d2d2d',
+    height: 50,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
-    backgroundColor: '#1e1e1e',
-    borderTopRightRadius: 16,
+    borderBottomColor: '#444',
   },
-  drawerTitle: {
+  headerTitle: {
     color: '#fff',
     fontSize: 20,
     fontWeight: 'bold',
   },
   closeButton: {
     padding: 8,
+    borderRadius: 8,
   },
   closeButtonText: {
-    color: '#999',
-    fontSize: 18,
+    color: '#ccc',
+    fontSize: 20,
     fontWeight: 'bold',
   },
-  statusBar: {
+  
+  // 连接状态栏（可选，固定高度）
+  statusContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#2d4d2d',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 0,
+    backgroundColor: '#1a2e1a',
+    height: 40,
     borderBottomWidth: 1,
-    borderBottomColor: '#4CAF50',
+    borderBottomColor: '#164618',
   },
   statusLeft: {
     flexDirection: 'row',
@@ -299,18 +327,21 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   disconnectButton: {
-    backgroundColor: '#ff6b6b',
+    backgroundColor: '#d32f2f',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 4,
+    borderRadius: 6,
   },
   disconnectButtonText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: 'bold',
   },
-  drawerContent: {
+  
+  // 2号 - 列表区域（可伸缩）
+  listContainer: {
     flex: 1,
+    backgroundColor: '#222',
   },
   loadingContainer: {
     flex: 1,
@@ -322,25 +353,36 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 12,
   },
-  bottomActions: {
-    padding: 16,
+  
+  // 3号 - 添加按钮（固定高度）
+  addContainer: {
+    paddingHorizontal: 30,
+    paddingVertical: 15,
+    backgroundColor: '#2d2d2d',
+    height: 70,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderTopWidth: 1,
-    borderTopColor: '#333',
-    backgroundColor: '#1e1e1e',
-    borderBottomRightRadius: 16,
+    borderTopColor: '#444',
   },
   addButton: {
     backgroundColor: '#4CAF50',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 30,
+    borderRadius: 12,
     alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
   addButtonText: {
+    marginTop: -3,
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
 });
 
-export default DrawerConnectionManager;
+export default CleanDrawerConnection;

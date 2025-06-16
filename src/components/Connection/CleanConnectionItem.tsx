@@ -1,7 +1,7 @@
-// src/components/Connection/ConnectionItem.tsx
-// 功能：单个SSH连接卡片，显示连接信息和操作按钮（连接、编辑、删除）
-// 依赖：SSHConnection类型, ConnectionContext (删除操作)
-// 被使用：ConnectionList组件
+// src/components/Connection/CleanConnectionItem.tsx
+// 功能：简洁版连接项组件
+// 依赖：SSHConnection类型, ConnectionContext
+// 被使用：CleanConnectionList组件
 
 import React, { useState } from 'react';
 import {
@@ -15,22 +15,22 @@ import {
 import { SSHConnection } from '../../types/ssh';
 import { useConnections } from '../../contexts/ConnectionContext';
 
-interface ConnectionItemProps {
+interface CleanConnectionItemProps {
   connection: SSHConnection;
   isConnecting: boolean;
   isConnected: boolean;
   onConnect: () => void;
-  onEdit?: (connection: SSHConnection) => void;
+  onEdit?: () => void;
 }
 
-const ConnectionItem: React.FC<ConnectionItemProps> = ({
+const CleanConnectionItem: React.FC<CleanConnectionItemProps> = ({
   connection,
   isConnecting,
   isConnected,
   onConnect,
   onEdit,
 }) => {
-  const { deleteConnection, updateConnection } = useConnections();
+  const { deleteConnection } = useConnections();
   const [showActions, setShowActions] = useState(false);
 
   const handleLongPress = () => {
@@ -39,11 +39,8 @@ const ConnectionItem: React.FC<ConnectionItemProps> = ({
 
   const handleEdit = () => {
     setShowActions(false);
-    // TODO: 传递编辑回调给父组件
     if (onEdit) {
-      onEdit(connection);
-    } else {
-      Alert.alert('编辑连接', '编辑功能即将实现');
+      onEdit();
     }
   };
 
@@ -60,7 +57,6 @@ const ConnectionItem: React.FC<ConnectionItemProps> = ({
           onPress: async () => {
             try {
               await deleteConnection(connection.id);
-              Alert.alert('已删除', `连接 "${connection.name}" 已删除`);
             } catch (error) {
               Alert.alert('删除失败', '无法删除连接');
             }
@@ -182,6 +178,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
+    marginHorizontal: 16,
     borderWidth: 1,
     borderColor: '#444',
   },
@@ -192,6 +189,8 @@ const styles = StyleSheet.create({
   expandedContainer: {
     borderColor: '#2196F3',
   },
+  
+  // 内容区域
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -246,6 +245,8 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
     fontSize: 12,
   },
+  
+  // 操作按钮区域
   actions: {
     flexDirection: 'row',
     marginTop: 12,
@@ -277,4 +278,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default ConnectionItem;
+export default CleanConnectionItem;
