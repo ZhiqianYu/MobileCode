@@ -32,6 +32,9 @@ const SimpleForward = React.forwardRef<any, {}>((props, ref) => {
   const [currentUrl, setCurrentUrl] = useState('http://localhost:3000');
   const [isLoading, setIsLoading] = useState(false);
   const [showPortManager, setShowPortManager] = useState(false);
+  const [history, setHistory] = useState<string[]>(['http://localhost:3000']); // 新增：浏览历史
+  const [historyIndex, setHistoryIndex] = useState(0); // 新增：历史索引
+  const [bookmarkList, setBookmarkList] = useState<BookmarkItem[]>([]);
 
   // 模拟端口转发列表
   const [portForwards, setPortForwards] = useState<PortForward[]>([
@@ -49,11 +52,23 @@ const SimpleForward = React.forwardRef<any, {}>((props, ref) => {
 
   // 导航操作
   const handleBack = () => {
-    Alert.alert('导航', '后退到上一页面');
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      setCurrentUrl(history[newIndex]);
+    } else {
+      Alert.alert('提示', '已经是第一页了');
+    }
   };
 
   const handleForward = () => {
-    Alert.alert('导航', '前进到下一页面');
+    if (historyIndex < history.length - 1) {
+      const newIndex = historyIndex + 1;
+      setHistoryIndex(newIndex);
+      setCurrentUrl(history[newIndex]);
+    } else {
+      Alert.alert('提示', '已经是最后一页了');
+    }
   };
 
   const handleRefresh = () => {
@@ -71,6 +86,12 @@ const SimpleForward = React.forwardRef<any, {}>((props, ref) => {
 
   const handleGo = () => {
     if (currentUrl.trim()) {
+      // 添加到历史记录
+      const newHistory = history.slice(0, historyIndex + 1);
+      newHistory.push(currentUrl);
+      setHistory(newHistory);
+      setHistoryIndex(newHistory.length - 1);
+      
       setIsLoading(true);
       setTimeout(() => {
         setIsLoading(false);
@@ -166,10 +187,21 @@ const SimpleForward = React.forwardRef<any, {}>((props, ref) => {
       {/* 书签栏 */}
       <View style={styles.bookmarkBar}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {/* 显示默认书签 */}
           {bookmarks.map((bookmark) => (
             <TouchableOpacity
               key={bookmark.id}
               style={styles.bookmark}
+              onPress={() => navigateToBookmark(bookmark.url)}
+            >
+              <Text style={styles.bookmarkText}>{bookmark.title}</Text>
+            </TouchableOpacity>
+          ))}
+          {/* 显示用户添加的书签 */}
+          {bookmarkList.map((bookmark) => (
+            <TouchableOpacity
+              key={bookmark.id}
+              style={[styles.bookmark, styles.userBookmark]}
               onPress={() => navigateToBookmark(bookmark.url)}
             >
               <Text style={styles.bookmarkText}>{bookmark.title}</Text>
@@ -204,6 +236,79 @@ const SimpleForward = React.forwardRef<any, {}>((props, ref) => {
       </View>
     </View>
   );
+
+  // 暴露方法给父组件
+  React.useImperativeHandle(ref, () => ({
+    goBack: () => {
+      if (historyIndex > 0) {
+        const newIndex = historyIndex - 1;
+        setHistoryIndex(newIndex);
+        setCurrentUrl(history[newIndex]);
+        Alert.alert('导航', `后退到: ${history[newIndex]}`);
+      } else {
+        Alert.alert('提示', '已经是第一页了');
+      }
+    },
+    goForward: () => {
+      if (historyIndex < history.length - 1) {
+        const newIndex = historyIndex + 1;
+        setHistoryIndex(newIndex);
+        setCurrentUrl(history[newIndex]);
+        Alert.alert('导航', `前进到: ${history[newIndex]}`);
+      } else {
+        Alert.alert('提示', '已经是最后一页了');
+      }
+    },
+    refresh: () => {
+      setIsLoading(true);
+      setTimeout(() => {
+        setIsLoading(false);
+        Alert.alert('刷新', `页面 ${currentUrl} 已刷新`);
+      }, 1000);
+    },
+    stop: () => {
+      setIsLoading(false);
+      Alert.alert('停止', '已停止加载页面');
+    },
+    screenshot: () => {
+      Alert.alert('截图', `已保存 ${currentUrl} 的截图`);
+    },
+    bookmark: () => {
+      const newBookmark: BookmarkItem = {
+        id: Date.now().toString(),
+        title: `Page ${bookmarkList.length + 1}`,
+        url: currentUrl,
+      };
+      setBookmarkList(prev => [...prev, newBookmark]);
+      Alert.alert('收藏', `已收藏: ${currentUrl}`);
+    },
+    navigate: (url: string) => {
+      if (url && url.trim()) {
+        // 确保URL格式正确
+        let formattedUrl = url.trim();
+        if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
+          formattedUrl = 'http://' + formattedUrl;
+        }
+        
+        setCurrentUrl(formattedUrl);
+        
+        // 添加到历史记录
+        const newHistory = history.slice(0, historyIndex + 1);
+        newHistory.push(formattedUrl);
+        setHistory(newHistory);
+        setHistoryIndex(newHistory.length - 1);
+        
+        // 开始加载
+        setIsLoading(true);
+        setTimeout(() => {
+          setIsLoading(false);
+          Alert.alert('导航', `已访问: ${formattedUrl}`);
+        }, 1000);
+      } else {
+        Alert.alert('错误', '请输入有效的URL地址');
+      }
+    },
+  }));
 
   return (
     <View style={styles.container}>
@@ -437,6 +542,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  userBookmark: {
+    backgroundColor: '#4CAF50',
+    borderWidth: 1,
+    borderColor: '#45a049',
   },
 });
 

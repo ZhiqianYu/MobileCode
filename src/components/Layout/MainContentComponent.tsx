@@ -49,7 +49,7 @@ const MainContentComponent = React.forwardRef<any, MainContentComponentProps>(({
     },
     // 编辑器方法
     editor: {
-      save: () => editorRef.current?.saveFile(),
+      save: () => editorRef.current?.save?.(),
       toggleLineNumbers: () => editorRef.current?.toggleLineNumbers(),
       insertText: (text: string) => editorRef.current?.insertText(text),
       undo: () => editorRef.current?.undo(),
@@ -71,6 +71,7 @@ const MainContentComponent = React.forwardRef<any, MainContentComponentProps>(({
     // 终端方法
     terminal: {
       clearTerminal: () => terminalRef.current?.clearTerminal(),
+      executeCommand: (command: string) => terminalRef.current?.executeCommand?.(command), 
     },
   }));
   

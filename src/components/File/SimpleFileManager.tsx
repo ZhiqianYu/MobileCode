@@ -21,9 +21,11 @@ interface FileItem {
   icon: string;
 }
 
-const SimpleFileManager = React.forwardRef<any, {}>((props, ref) => {
+const SimpleFileManager = React.forwardRef<any, {}>((_, ref) => {
   const [currentPath, setCurrentPath] = useState('/home/user');
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
+  const [copiedItem, setCopiedItem] = useState<string | null>(null);
+  const [fileOperation, setFileOperation] = useState<'copy' | 'cut' | null>(null);
 
   // 模拟文件数据
   const mockFiles: FileItem[] = [
@@ -71,41 +73,104 @@ const SimpleFileManager = React.forwardRef<any, {}>((props, ref) => {
     );
   };
 
+  // 截断文件名显示
+  const truncateFileName = (fileName: string, maxLength: number = 15) => {
+    if (fileName.length <= maxLength) {
+      return fileName;
+    }
+    return fileName.substring(0, maxLength - 3) + '...';
+  };
+
   // 暴露方法给父组件
   React.useImperativeHandle(ref, () => ({
     copy: () => {
       if (selectedItem) {
-        Alert.alert('复制', `复制文件: ${selectedItem}`);
+        setCopiedItem(selectedItem);
+        setFileOperation('copy');
+        Alert.alert('复制', `已复制: ${selectedItem}`);
       } else {
-        Alert.alert('提示', '请先选择一个文件');
+        Alert.alert('提示', '请先选择一个文件或文件夹');
       }
     },
     paste: () => {
-      Alert.alert('粘贴', '粘贴文件（待实现）');
+      if (copiedItem && fileOperation) {
+        const operationType = fileOperation === 'copy' ? '复制' : '移动';
+        Alert.alert('粘贴', `${operationType} "${copiedItem}" 到当前目录`);
+        if (fileOperation === 'cut') {
+          setCopiedItem(null);
+          setFileOperation(null);
+        }
+      } else {
+        Alert.alert('提示', '没有可粘贴的文件');
+      }
     },
     cut: () => {
       if (selectedItem) {
-        Alert.alert('剪切', `剪切文件: ${selectedItem}`);
+        setCopiedItem(selectedItem);
+        setFileOperation('cut');
+        Alert.alert('剪切', `已剪切: ${selectedItem}`);
       } else {
-        Alert.alert('提示', '请先选择一个文件');
+        Alert.alert('提示', '请先选择一个文件或文件夹');
       }
     },
     delete: () => {
       if (selectedItem) {
-        Alert.alert('删除', `删除文件: ${selectedItem}`);
+        Alert.alert(
+          '删除确认',
+          `确定要删除 "${selectedItem}" 吗？`,
+          [
+            { text: '取消', style: 'cancel' },
+            { 
+              text: '删除', 
+              style: 'destructive', 
+              onPress: () => {
+                console.log('删除文件:', selectedItem);
+                setSelectedItem(null);
+                Alert.alert('删除成功', `已删除: ${selectedItem}`);
+              }
+            },
+          ]
+        );
       } else {
-        Alert.alert('提示', '请先选择一个文件');
+        Alert.alert('提示', '请先选择一个文件或文件夹');
       }
     },
     newFile: () => {
-      Alert.alert('新建文件', '创建新文件（待实现）');
+      Alert.prompt(
+        '新建文件',
+        '请输入文件名:',
+        (fileName) => {
+          if (fileName && fileName.trim()) {
+            console.log('创建新文件:', fileName);
+            Alert.alert('创建成功', `已创建文件: ${fileName}`);
+          }
+        },
+        'plain-text',
+        '',
+        'default'
+      );
     },
     newDir: () => {
-      Alert.alert('新建目录', '创建新目录（待实现）');
+      Alert.prompt(
+        '新建文件夹',
+        '请输入文件夹名:',
+        (dirName) => {
+          if (dirName && dirName.trim()) {
+            console.log('创建新文件夹:', dirName);
+            Alert.alert('创建成功', `已创建文件夹: ${dirName}`);
+          }
+        },
+        'plain-text',
+        '',
+        'default'
+      );
     },
     refresh: () => {
-      Alert.alert('刷新', '刷新文件列表');
+      console.log('刷新文件列表');
       setSelectedItem(null);
+      setCopiedItem(null);
+      setFileOperation(null);
+      Alert.alert('刷新', '文件列表已刷新');
     },
   }));
 
@@ -156,14 +221,39 @@ const SimpleFileManager = React.forwardRef<any, {}>((props, ref) => {
 
       {/* 状态栏 */}
       <View style={styles.statusBar}>
-        <Text style={styles.statusText}>
-          {mockFiles.filter(f => f.type === 'directory').length - 1} 文件夹, {' '}
-          {mockFiles.filter(f => f.type === 'file').length} 文件
-        </Text>
-        {selectedItem && (
-          <Text style={styles.selectedText}>已选择: {selectedItem}</Text>
-        )}
+        {/* 左侧：文件统计 */}
+        <View style={styles.statusLeft}>
+          <Text style={styles.statusText}>
+            {mockFiles.filter(f => f.type === 'directory').length - 1} 文件夹, {' '}
+            {mockFiles.filter(f => f.type === 'file').length} 文件
+          </Text>
+        </View>
+        
+        {/* 右侧：选择和复制状态（一行显示） */}
+        <View style={styles.statusRight}>
+          {selectedItem && (
+            <View style={styles.statusItem}>
+              <Text style={styles.statusLabel}>已选择:</Text>
+              <Text style={styles.selectedText} numberOfLines={1} ellipsizeMode="middle">
+                {truncateFileName(selectedItem)}
+              </Text>
+            </View>
+          )}
+          
+          {copiedItem && (
+            <View style={styles.statusItem}>
+              <Text style={styles.operationIcon}>
+                {fileOperation === 'copy' ? '📋' : '✂️'}
+              </Text>
+              <Text style={styles.operationText} numberOfLines={1} ellipsizeMode="middle">
+                {truncateFileName(copiedItem)}
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
+
+      
     </View>
   );
 });
@@ -246,7 +336,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   statusBar: {
-    flexDirection: 'row',
+    flexDirection: 'row', // 左右布局
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#2d2d2d',
@@ -254,15 +344,46 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderTopWidth: 1,
     borderTopColor: '#444',
+    minHeight: 40,
+  },
+  statusLeft: {
+    flex: 1, // 占据左侧空间
   },
   statusText: {
     color: '#999',
     fontSize: 12,
   },
+  statusRight: {
+    flexDirection: 'row', // 右侧内容也是左右排列
+    alignItems: 'center',
+    flex: 1, // 占据右侧空间
+    justifyContent: 'flex-end', // 右对齐
+  },
+  statusItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 12, // 右侧各项之间的间距
+  },
+  statusLabel: {
+    color: '#999',
+    fontSize: 11,
+    marginRight: 4,
+  },
   selectedText: {
     color: '#4CAF50',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
+    maxWidth: 80, // 限制最大宽度
+  },
+  operationIcon: {
+    fontSize: 12,
+    marginRight: 4,
+  },
+  operationText: {
+    color: '#2196F3',
+    fontSize: 11,
+    fontWeight: '500',
+    maxWidth: 80, // 限制最大宽度
   },
 });
 

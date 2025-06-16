@@ -67,9 +67,20 @@ const SimpleTerminal = React.forwardRef<any, {}>((props, ref) => {
     console.log('Terminal history cleared');
   }, []);
 
+  // 执行命令
+  const handleExecuteCommand = useCallback((command: string) => {
+    console.log('执行终端命令:', command);
+    if (isConnected && writeToSSH) {
+      writeToSSH(command + '\r'); // 添加回车符执行命令
+    } else {
+      console.warn('终端未连接，无法执行命令');
+    }
+  }, [isConnected, writeToSSH]);
+
   // 暴露方法给父组件
   React.useImperativeHandle(ref, () => ({
     clearTerminal: handleClearTerminal,
+    executeCommand: handleExecuteCommand,
   }));
 
   return (

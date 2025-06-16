@@ -20,6 +20,7 @@ interface QuickToolComponentProps {
   sizeConfig: SizeConfig;
   onToggleVisibility: () => void;
   onInputCommand: (command: string) => void;
+  moduleRefs: React.RefObject<any>; // 用于获取模块引用
 }
 
 // 工具按钮接口
@@ -36,6 +37,7 @@ const QuickToolComponent: React.FC<QuickToolComponentProps> = ({
   sizeConfig,
   onToggleVisibility,
   onInputCommand,
+  moduleRefs,
 }) => {
   
   // 根据模块获取工具按钮
@@ -93,10 +95,109 @@ const QuickToolComponent: React.FC<QuickToolComponentProps> = ({
 
   const toolButtons = getToolButtons();
 
-  // 处理工具按钮点击
+  // 处理工具按钮点击 - 实现真正功能
   const handleToolClick = (tool: ToolButton) => {
     console.log('执行快捷命令:', tool.command);
-    onInputCommand(tool.command);
+    
+    if (!moduleRefs?.current) {
+      console.warn('Module refs not available');
+      return;
+    }
+
+    try {
+      switch (activeModule) {
+        case 'file':
+          switch (tool.command) {
+            case 'copy':
+              moduleRefs.current.fileManager?.copy();
+              break;
+            case 'paste':
+              moduleRefs.current.fileManager?.paste();
+              break;
+            case 'cut':
+              moduleRefs.current.fileManager?.cut();
+              break;
+            case 'delete':
+              moduleRefs.current.fileManager?.delete();
+              break;
+            case 'new_file':
+              moduleRefs.current.fileManager?.newFile();
+              break;
+            case 'new_dir':
+              moduleRefs.current.fileManager?.newDir();
+              break;
+            case 'refresh':
+              moduleRefs.current.fileManager?.refresh();
+              break;
+          }
+          break;
+          
+        case 'editor':
+          switch (tool.command) {
+            case 'copy':
+              moduleRefs.current.editor?.copy();
+              break;
+            case 'paste':
+              moduleRefs.current.editor?.paste();
+              break;
+            case 'cut':
+              moduleRefs.current.editor?.cut();
+              break;
+            case 'backspace':
+              moduleRefs.current.editor?.insertText('\b');
+              break;
+            case 'delete':
+              moduleRefs.current.editor?.insertText('\x7f');
+              break;
+            case 'indent':
+              moduleRefs.current.editor?.indent();
+              break;
+            case 'save':
+              moduleRefs.current.editor?.save();
+              break;
+            case 'undo':
+              moduleRefs.current.editor?.undo();
+              break;
+          }
+          break;
+          
+        case 'forward':
+          switch (tool.command) {
+            case 'back':
+              moduleRefs.current.forward?.goBack();
+              break;
+            case 'forward':
+              moduleRefs.current.forward?.goForward();
+              break;
+            case 'refresh':
+              moduleRefs.current.forward?.refresh();
+              break;
+            case 'stop':
+              moduleRefs.current.forward?.stop();
+              break;
+            case 'screenshot':
+              moduleRefs.current.forward?.screenshot();
+              break;
+            case 'bookmark':
+              moduleRefs.current.forward?.bookmark();
+              break;
+          }
+          break;
+          
+        case 'terminal':
+          // 终端的快捷命令直接发送到终端执行
+          if (tool.command.includes(' ')) {
+            // 如果是完整命令（如 'ls -la'），直接执行
+            moduleRefs.current.terminal?.executeCommand?.(tool.command);
+          } else {
+            // 如果是单个命令，也直接执行
+            moduleRefs.current.terminal?.executeCommand?.(tool.command);
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('Failed to execute quick tool command:', error);
+    }
   };
 
   // 根据尺寸配置获取按钮大小

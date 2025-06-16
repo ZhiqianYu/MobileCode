@@ -215,7 +215,19 @@ const CleanDrawerSettings: React.FC<CleanDrawerSettingsProps> = ({
                 />
               </View>
 
-              {/* 2-2 终端设置 */}
+              {/* 2-2 编辑器设置 */}
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>编辑器</Text>
+                
+                <SettingSwitch
+                  label="自动换行"
+                  value={settings.wordWrap}
+                  onValueChange={(value) => updateSetting('wordWrap', value)}
+                  description="代码行过长时自动换行显示"
+                />
+              </View>
+
+              {/* 2-3 终端设置 */}
               <View style={styles.sectionContainer}>
                 <Text style={styles.sectionTitle}>终端</Text>
                 <SettingSwitch

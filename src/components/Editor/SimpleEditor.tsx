@@ -1,158 +1,108 @@
 // src/components/Editor/SimpleEditor.tsx
-// 功能：简化版代码编辑器，支持行号显示和基础语法高亮
-// 依赖：React Native基础组件
-// 被使用：MainContentComponent
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useImperativeHandle } from 'react';
 import {
   View,
   Text,
-  TextInput,
   ScrollView,
   TouchableOpacity,
-  StyleSheet,
   Alert,
+  StyleSheet,
+  Platform,
 } from 'react-native';
+import CodeEditor, { CodeEditorSyntaxStyles } from '@rivascva/react-native-code-editor';
+import { useSettings } from '../../contexts/SettingsContext';
 
-interface FileTab {
-  id: string;
-  name: string;
-  content: string;
-  language: 'javascript' | 'python' | 'text';
-  modified: boolean;
-}
+// 编辑器支持的语言映射
+const languageMap: Record<string, string> = {
+  javascript: 'javascript',
+  python: 'python',
+  text: 'text',
+};
 
-const SimpleEditor: React.FC = () => {
-  const [showLineNumbers, setShowLineNumbers] = useState(true);
+const SimpleEditor = React.forwardRef((_, ref) => {
+  const { settings } = useSettings();
   const [activeTabId, setActiveTabId] = useState('tab1');
-  const scrollViewRef = useRef<ScrollView>(null);
-  const textInputRef = useRef<TextInput>(null);
 
-  // 模拟打开的文件标签
-  const [tabs, setTabs] = useState<FileTab[]>([
+  const [tabs, setTabs] = useState([
     {
       id: 'tab1',
       name: 'app.js',
+      content: `function greet(name) {\n  console.log("Hello " + name);\n}`,
       language: 'javascript',
       modified: false,
-      content: `// Welcome to Simple Editor
-function greetUser(name) {
-  console.log(\`Hello, \${name}!\`);
-  return \`Welcome \${name} to our app\`;
-}
-
-const user = {
-  name: 'Developer',
-  role: 'Frontend'
-};
-
-// Main application logic
-greetUser(user.name);
-
-export default greetUser;`
     },
     {
       id: 'tab2',
       name: 'script.py',
+      content: `def hello(name):\n    print("Hello", name)`,
       language: 'python',
       modified: true,
-      content: `# Python Script Example
-import os
-import sys
-
-def main():
-    """Main function"""
-    print("Hello from Python!")
-    
-    # List current directory
-    files = os.listdir('.')
-    for file in files:
-        print(f"File: {file}")
-
-if __name__ == "__main__":
-    main()`
     },
   ]);
 
   const activeTab = tabs.find(tab => tab.id === activeTabId);
 
-  // 获取行号数组
-  const getLineNumbers = (content: string): number[] => {
-    const lines = content.split('\n');
-    return Array.from({ length: lines.length }, (_, i) => i + 1);
+  const handleChange = (newCode: string) => {
+    if (!activeTab) return;
+    setTabs(prev =>
+      prev.map(tab =>
+        tab.id === activeTabId
+          ? { ...tab, content: newCode, modified: true }
+          : tab
+      )
+    );
   };
 
-  // 简单的语法高亮样式
-  const getSyntaxStyle = (language: string) => {
-    const baseStyle = { ...styles.codeText };
-    switch (language) {
-      case 'javascript':
-        return { ...baseStyle, color: '#f8f8f2' };
-      case 'python':
-        return { ...baseStyle, color: '#e6db74' };
-      default:
-        return baseStyle;
-    }
+  const saveFile = () => {
+    if (!activeTab) return;
+    setTabs(prev =>
+      prev.map(tab =>
+        tab.id === activeTabId ? { ...tab, modified: false } : tab
+      )
+    );
+    Alert.alert('保存成功', `文件 "${activeTab.name}" 已保存`);
   };
 
-  // 切换标签
   const switchTab = (tabId: string) => {
     setActiveTabId(tabId);
   };
 
-  // 关闭标签
   const closeTab = (tabId: string) => {
     if (tabs.length === 1) {
-      Alert.alert('提示', '至少需要保留一个标签');
+      Alert.alert('提示', '至少保留一个标签');
       return;
     }
-    
+
     const tab = tabs.find(t => t.id === tabId);
     if (tab?.modified) {
-      Alert.alert(
-        '未保存的更改',
-        `文件 "${tab.name}" 有未保存的更改，确定要关闭吗？`,
-        [
-          { text: '取消', style: 'cancel' },
-          { text: '关闭', style: 'destructive', onPress: () => doCloseTab(tabId) },
-        ]
-      );
+      Alert.alert('未保存的更改', `关闭 "${tab.name}"？`, [
+        { text: '取消', style: 'cancel' },
+        { text: '关闭', style: 'destructive', onPress: () => doCloseTab(tabId) },
+      ]);
     } else {
       doCloseTab(tabId);
     }
   };
 
   const doCloseTab = (tabId: string) => {
-    const newTabs = tabs.filter(tab => tab.id !== tabId);
+    const newTabs = tabs.filter(t => t.id !== tabId);
     setTabs(newTabs);
-    
-    if (activeTabId === tabId) {
-      setActiveTabId(newTabs[0]?.id || '');
+    if (activeTabId === tabId && newTabs.length > 0) {
+      setActiveTabId(newTabs[0].id);
     }
   };
 
-  // 更新文件内容
-  const updateContent = (content: string) => {
-    setTabs(prevTabs => 
-      prevTabs.map(tab => 
-        tab.id === activeTabId 
-          ? { ...tab, content, modified: true }
-          : tab
-      )
-    );
-  };
-
-  // 保存文件
-  const saveFile = () => {
-    setTabs(prevTabs => 
-      prevTabs.map(tab => 
-        tab.id === activeTabId 
-          ? { ...tab, modified: false }
-          : tab
-      )
-    );
-    Alert.alert('保存成功', `文件 "${activeTab?.name}" 已保存`);
-  };
+  useImperativeHandle(ref, () => ({
+    save: saveFile,
+    insertText: (text: string) => {
+      if (!activeTab) return;
+      const newContent = activeTab.content + text;
+      handleChange(newContent);
+    },
+    refocus: () => {},
+    isEditingMode: true,
+  }));
 
   if (!activeTab) {
     return (
@@ -162,96 +112,45 @@ if __name__ == "__main__":
     );
   }
 
-  const lineNumbers = getLineNumbers(activeTab.content);
-
   return (
     <View style={styles.container}>
-      {/* 文件标签栏 */}
+      {/* 顶部标签栏 */}
       <View style={styles.tabBar}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {tabs.map((tab) => (
+          {tabs.map(tab => (
             <TouchableOpacity
               key={tab.id}
-              style={[
-                styles.tab,
-                activeTabId === tab.id && styles.activeTab
-              ]}
+              style={[styles.tab, activeTabId === tab.id && styles.activeTab]}
               onPress={() => switchTab(tab.id)}
             >
-              <Text style={[
-                styles.tabText,
-                activeTabId === tab.id && styles.activeTabText
-              ]}>
+              <Text style={[styles.tabText, activeTabId === tab.id && styles.activeTabText]}>
                 {tab.name}
                 {tab.modified && <Text style={styles.modifiedDot}> ●</Text>}
               </Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => closeTab(tab.id)}
-              >
+              <TouchableOpacity style={styles.closeButton} onPress={() => closeTab(tab.id)}>
                 <Text style={styles.closeButtonText}>×</Text>
               </TouchableOpacity>
             </TouchableOpacity>
           ))}
         </ScrollView>
-
-        {/* 工具按钮 - 移除，将功能移到快捷工具栏 */}
       </View>
 
-      {/* 编辑器主体 - 可滚动区域 */}
-      <View style={styles.editorContainer}>
-        <View style={styles.editorContent}>
-          {/* 行号列 */}
-          {showLineNumbers && (
-            <ScrollView
-              style={styles.lineNumberColumn}
-              scrollEnabled={false}
-              showsVerticalScrollIndicator={false}
-            >
-              {lineNumbers.map((lineNum) => (
-                <Text key={lineNum} style={styles.lineNumber}>
-                  {lineNum}
-                </Text>
-              ))}
-            </ScrollView>
-          )}
-
-          {/* 代码编辑区域 */}
-          <View style={styles.codeColumn}>
-            <ScrollView
-              ref={scrollViewRef}
-              style={styles.codeScrollView}
-              showsVerticalScrollIndicator={true}
-              showsHorizontalScrollIndicator={true}
-              nestedScrollEnabled={true}
-            >
-              <TextInput
-                ref={textInputRef}
-                style={[
-                  styles.codeInput,
-                  getSyntaxStyle(activeTab.language),
-                  !showLineNumbers && styles.codeInputFullWidth
-                ]}
-                value={activeTab.content}
-                onChangeText={updateContent}
-                multiline
-                textAlignVertical="top"
-                scrollEnabled={false}
-                autoCorrect={false}
-                autoCapitalize="none"
-                keyboardType="default"
-                placeholder="开始编写代码..."
-                placeholderTextColor="#666"
-              />
-            </ScrollView>
-          </View>
-        </View>
+      {/* 中间编辑器区域 */}
+      <View style={styles.editorArea}>
+        <CodeEditor
+          style={styles.editor}
+          language={languageMap[activeTab.language]}
+          syntaxStyle={CodeEditorSyntaxStyles.monokai}
+          initialValue={activeTab.content}
+          showLineNumbers
+          onChange={handleChange}
+        />
       </View>
 
-      {/* 状态栏 */}
+      {/* 底部状态栏 */}
       <View style={styles.statusBar}>
         <Text style={styles.statusText}>
-          {activeTab.language.toUpperCase()} • 第 1 行，第 1 列
+          {activeTab.language.toUpperCase()} • {activeTab.modified ? '未保存' : '已保存'}
         </Text>
         <Text style={styles.statusText}>
           {activeTab.content.split('\n').length} 行
@@ -259,7 +158,7 @@ if __name__ == "__main__":
       </View>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -306,55 +205,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  editorContainer: {
+  editorArea: {
     flex: 1,
   },
-  editorContent: {
-    flexDirection: 'row',
-    flex: 1,
-  },
-  lineNumberColumn: {
-    backgroundColor: '#252525',
-    paddingHorizontal: 3,
-    paddingVertical: 12,
-    borderRightWidth: 1,
-    borderRightColor: '#444',
-    maxWidth: 35,
-    maxHeight: '100%',
-  },
-  lineNumber: {
-    color: '#666',
-    fontSize: 12,
-    fontFamily: 'monospace',
-    lineHeight: 18,
-    textAlign: 'right',
-  },
-  codeColumn: {
-    flex: 1,
-  },
-  codeScrollView: {
-    flex: 1,
-  },
-  codeInput: {
-    padding: 12,
-    fontSize: 14,
-    fontFamily: 'monospace',
-    lineHeight: 18,
-    minHeight: 300, // 最小高度，确保有足够空间
-  },
-  codeInputFullWidth: {
-    paddingLeft: 20,
-  },
-  codeText: {
-    color: '#f8f8f2',
-    fontSize: 14,
-    fontFamily: 'monospace',
-    lineHeight: 18,
+  editor: {
+    fontSize: 16,
+    inputLineHeight: 25,
+    highlighterLineHeight: 25,
+    padding: 4,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   statusBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
     backgroundColor: '#2d2d2d',
     paddingHorizontal: 12,
     paddingVertical: 6,

@@ -1,9 +1,9 @@
 // src/components/Layout/MainContainer.tsx
-// 功能：0号容器，管理4个基础组件的布局，简化版仅支持点击显示/隐藏
+// 功能：0号容器，管理4个基础组件的布局，简化版仅支持点击显示/隐藏，配合编辑器焦点保持
 // 依赖：4个基础组件，布局状态管理，安全区域适配
 // 被使用：App.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -54,6 +54,9 @@ const MainContainer: React.FC = () => {
 
   // 键盘高度状态
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  
+  // MainContent组件引用，用于调用各模块方法
+  const mainContentRef = useRef<any>(null);
   
   // 根据全屏设置计算实际可用高度
   const availableHeight = (settings.fullScreen 
@@ -279,14 +282,150 @@ const MainContainer: React.FC = () => {
     closeConnectionDrawer();
   };
 
-  // 处理快捷工具命令
+  // 处理快捷工具命令 - 增强版，支持焦点保持
   const handleQuickToolCommand = (command: string) => {
-    // TODO: 根据不同模块处理命令
+    console.log('QuickTool command:', command, 'Active module:', activeModule);
+    
+    if (!mainContentRef.current) {
+      console.warn('MainContent ref not available');
+      return;
+    }
+
+    try {
+      switch (activeModule) {
+        case 'file':
+          // 文件管理器命令
+          switch (command) {
+            case 'copy':
+              mainContentRef.current.fileManager?.copy();
+              break;
+            case 'paste':
+              mainContentRef.current.fileManager?.paste();
+              break;
+            case 'cut':
+              mainContentRef.current.fileManager?.cut();
+              break;
+            case 'delete':
+              mainContentRef.current.fileManager?.delete();
+              break;
+            case 'new_file':
+              mainContentRef.current.fileManager?.newFile();
+              break;
+            case 'new_dir':
+              mainContentRef.current.fileManager?.newDir();
+              break;
+            case 'refresh':
+              mainContentRef.current.fileManager?.refresh();
+              break;
+          }
+          break;
+
+        case 'editor':
+          // 编辑器命令 - 需要保持焦点
+          switch (command) {
+            case 'copy':
+              mainContentRef.current.editor?.copy();
+              break;
+            case 'paste':
+              mainContentRef.current.editor?.paste();
+              break;
+            case 'cut':
+              mainContentRef.current.editor?.cut();
+              break;
+            case 'backspace':
+              // 发送退格字符
+              mainContentRef.current.editor?.insertText('\b');
+              break;
+            case 'delete':
+              // 发送删除字符
+              mainContentRef.current.editor?.insertText('\x7f');
+              break;
+            case 'indent':
+              mainContentRef.current.editor?.indent();
+              break;
+            case 'save':
+              mainContentRef.current.editor?.save();
+              break;
+            case 'undo':
+              mainContentRef.current.editor?.undo();
+              break;
+          }
+          break;
+
+        case 'forward':
+          // 转发浏览器命令
+          switch (command) {
+            case 'back':
+              mainContentRef.current.forward?.goBack();
+              break;
+            case 'forward':
+              mainContentRef.current.forward?.goForward();
+              break;
+            case 'refresh':
+              mainContentRef.current.forward?.refresh();
+              break;
+            case 'stop':
+              mainContentRef.current.forward?.stop();
+              break;
+            case 'screenshot':
+              mainContentRef.current.forward?.screenshot();
+              break;
+            case 'bookmark':
+              mainContentRef.current.forward?.bookmark();
+              break;
+          }
+          break;
+
+        case 'terminal':
+          // 终端命令
+          if (command === 'clear') {
+            mainContentRef.current.terminal?.clearTerminal();
+          } else {
+            // 其他命令通过输入发送
+            handleInputSend(command);
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('Error executing quick tool command:', error);
+    }
   };
 
-  // 处理输入栏发送
+  // 处理输入栏发送 - 增强版，支持焦点保持
   const handleInputSend = (input: string) => {
-    // TODO: 根据不同模块处理输入
+    console.log('Input send:', input, 'Active module:', activeModule);
+    
+    if (!mainContentRef.current) {
+      console.warn('MainContent ref not available');
+      return;
+    }
+
+    try {
+      switch (activeModule) {
+        case 'file':
+          // 文件管理器：搜索文件
+          console.log('Search files:', input);
+          break;
+
+        case 'editor':
+          // 编辑器：插入文本
+          mainContentRef.current.editor?.insertText(input);
+          break;
+
+        case 'forward':
+          // 转发浏览器：导航到URL
+          mainContentRef.current.forward?.navigate(input);
+          break;
+
+        case 'terminal':
+          // 终端：执行命令
+          // TODO: 通过SSH连接发送命令
+          console.log('Execute terminal command:', input);
+          break;
+      }
+    } catch (error) {
+      console.error('Error sending input:', error);
+    }
   };
 
   return (
@@ -323,6 +462,7 @@ const MainContainer: React.FC = () => {
           positions.mainContent,
         ]}>
           <MainContentComponent
+            ref={mainContentRef}
             activeModule={activeModule}
             height={availableHeight - heights.topBar - (positions.mainContent.bottom || 0)}
             width={screenWidth}

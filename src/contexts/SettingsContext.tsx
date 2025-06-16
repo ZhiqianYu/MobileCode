@@ -14,6 +14,9 @@ export interface AppSettings {
   fontSize: 'small' | 'medium' | 'large' | 'xlarge';
   theme: 'dark' | 'blue' | 'purple' | 'orange';
   fullScreen: boolean; // 新增全屏设置
+
+  // 编辑器设置
+  wordWrap: boolean; // 新增：自动换行设置
   
   // 终端设置
   terminalBell: boolean;
@@ -29,6 +32,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   fontSize: 'medium',
   theme: 'dark',
   fullScreen: false,
+  wordWrap: true, // 新增：默认开启自动换行
   terminalBell: false,
   showPing: true,
   autoConnect: true,
