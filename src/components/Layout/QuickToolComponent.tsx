@@ -1,6 +1,6 @@
 // src/components/Layout/QuickToolComponent.tsx
-// 功能：3号组件 - 快捷工具栏，根据模块显示不同工具，支持隐藏和悬浮
-// 依赖：模块类型定义
+// 功能：3号组件 - 完整功能的快捷工具栏，真正执行模块操作
+// 依赖：模块类型定义，MainContentComponent引用
 // 被使用：MainContainer
 
 import React, { useState } from 'react';
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Alert,
 } from 'react-native';
 
 export type ModuleType = 'file' | 'editor' | 'forward' | 'terminal';
@@ -20,7 +21,8 @@ interface QuickToolComponentProps {
   sizeConfig: SizeConfig;
   onToggleVisibility: () => void;
   onInputCommand: (command: string) => void;
-  moduleRefs: React.RefObject<any>; // 用于获取模块引用
+  // 新增：对 MainContentComponent 的引用
+  mainContentRef?: React.RefObject<any>;
 }
 
 // 工具按钮接口
@@ -30,6 +32,7 @@ interface ToolButton {
   command: string;
   icon: string;
   color: string;
+  action?: () => void; // 新增：直接执行的动作
 }
 
 const QuickToolComponent: React.FC<QuickToolComponentProps> = ({
@@ -37,55 +40,386 @@ const QuickToolComponent: React.FC<QuickToolComponentProps> = ({
   sizeConfig,
   onToggleVisibility,
   onInputCommand,
-  moduleRefs,
+  mainContentRef,
 }) => {
   
+  // 执行文件管理器操作
+  const executeFileManagerAction = (command: string) => {
+    const fileManager = mainContentRef?.current?.fileManager;
+    if (!fileManager) {
+      Alert.alert('错误', '文件管理器不可用');
+      return;
+    }
+
+    switch (command) {
+      case 'copy':
+        fileManager.copy();
+        break;
+      case 'paste':
+        fileManager.paste();
+        break;
+      case 'cut':
+        fileManager.cut();
+        break;
+      case 'delete':
+        fileManager.delete();
+        break;
+      case 'new_file':
+        fileManager.newFile();
+        break;
+      case 'new_dir':
+        fileManager.newDir();
+        break;
+      case 'refresh':
+        fileManager.refresh();
+        break;
+      default:
+        Alert.alert('未知操作', `命令: ${command}`);
+    }
+  };
+
+  // 执行编辑器操作
+  const executeEditorAction = (command: string) => {
+    const editor = mainContentRef?.current?.editor;
+    if (!editor) {
+      Alert.alert('错误', '编辑器不可用');
+      return;
+    }
+
+    switch (command) {
+      case 'save':
+        editor.save();
+        break;
+      case 'copy':
+        editor.copy();
+        break;
+      case 'paste':
+        editor.paste();
+        break;
+      case 'cut':
+        editor.cut();
+        break;
+      case 'undo':
+        editor.undo();
+        break;
+      case 'indent':
+        editor.indent();
+        break;
+      case 'toggle_line_numbers':
+        editor.toggleLineNumbers();
+        break;
+      case 'new_file':
+        editor.newFile();
+        break;
+      case 'backspace':
+        // 发送退格键到编辑器
+        editor.insertText('\b');
+        break;
+      case 'delete':
+        // 发送删除键到编辑器
+        editor.insertText('\x7f');
+        break;
+      default:
+        Alert.alert('未知操作', `命令: ${command}`);
+    }
+  };
+
+  // 执行转发浏览器操作
+  const executeForwardAction = (command: string) => {
+    const forward = mainContentRef?.current?.forward;
+    if (!forward) {
+      Alert.alert('错误', '转发浏览器不可用');
+      return;
+    }
+
+    switch (command) {
+      case 'back':
+        forward.goBack();
+        break;
+      case 'forward':
+        forward.goForward();
+        break;
+      case 'refresh':
+        forward.refresh();
+        break;
+      case 'stop':
+        forward.stop();
+        break;
+      case 'screenshot':
+        forward.screenshot();
+        break;
+      case 'bookmark':
+        forward.bookmark();
+        break;
+      default:
+        Alert.alert('未知操作', `命令: ${command}`);
+    }
+  };
+
+  // 执行终端操作
+  const executeTerminalAction = (command: string) => {
+    if (command === 'clear') {
+      const terminal = mainContentRef?.current?.terminal;
+      if (terminal && terminal.clearTerminal) {
+        terminal.clearTerminal();
+      } else {
+        Alert.alert('错误', '终端清屏功能不可用');
+      }
+    } else {
+      // 其他命令通过 onInputCommand 发送到终端
+      onInputCommand(command);
+    }
+  };
+
   // 根据模块获取工具按钮
   const getToolButtons = (): ToolButton[] => {
     switch (activeModule) {
       case 'file':
         return [
-          { id: 'copy', label: '复制', command: 'copy', icon: '📋', color: '#4CAF50' },
-          { id: 'paste', label: '粘贴', command: 'paste', icon: '📄', color: '#2196F3' },
-          { id: 'cut', label: '剪切', command: 'cut', icon: '✂️', color: '#FF9800' },
-          { id: 'delete', label: '删除', command: 'delete', icon: '🗑️', color: '#F44336' },
-          { id: 'newFile', label: '新文件', command: 'new_file', icon: '📄', color: '#9C27B0' },
-          { id: 'newDir', label: '新目录', command: 'new_dir', icon: '📁', color: '#607D8B' },
-          { id: 'refresh', label: '刷新', command: 'refresh', icon: '🔄', color: '#00BCD4' },
+          { 
+            id: 'copy', 
+            label: '复制', 
+            command: 'copy', 
+            icon: '📋', 
+            color: '#4CAF50',
+            action: () => executeFileManagerAction('copy')
+          },
+          { 
+            id: 'paste', 
+            label: '粘贴', 
+            command: 'paste', 
+            icon: '📄', 
+            color: '#2196F3',
+            action: () => executeFileManagerAction('paste')
+          },
+          { 
+            id: 'cut', 
+            label: '剪切', 
+            command: 'cut', 
+            icon: '✂️', 
+            color: '#FF9800',
+            action: () => executeFileManagerAction('cut')
+          },
+          { 
+            id: 'delete', 
+            label: '删除', 
+            command: 'delete', 
+            icon: '🗑️', 
+            color: '#F44336',
+            action: () => executeFileManagerAction('delete')
+          },
+          { 
+            id: 'newFile', 
+            label: '新文件', 
+            command: 'new_file', 
+            icon: '📄', 
+            color: '#9C27B0',
+            action: () => executeFileManagerAction('new_file')
+          },
+          { 
+            id: 'newDir', 
+            label: '新目录', 
+            command: 'new_dir', 
+            icon: '📁', 
+            color: '#607D8B',
+            action: () => executeFileManagerAction('new_dir')
+          },
+          { 
+            id: 'refresh', 
+            label: '刷新', 
+            command: 'refresh', 
+            icon: '🔄', 
+            color: '#00BCD4',
+            action: () => executeFileManagerAction('refresh')
+          },
         ];
         
       case 'editor':
         return [
-          { id: 'copy', label: '复制', command: 'copy', icon: '📋', color: '#4CAF50' },
-          { id: 'paste', label: '粘贴', command: 'paste', icon: '📄', color: '#2196F3' },
-          { id: 'cut', label: '剪切', command: 'cut', icon: '✂️', color: '#FF9800' },
-          { id: 'backspace', label: '退格', command: 'backspace', icon: '⌫', color: '#F44336' },
-          { id: 'delete', label: '删除', command: 'delete', icon: '⌦', color: '#E91E63' },
-          { id: 'indent', label: '缩进', command: 'indent', icon: '→', color: '#9C27B0' },
-          { id: 'save', label: '保存', command: 'save', icon: '💾', color: '#4CAF50' },
-          { id: 'undo', label: '撤销', command: 'undo', icon: '↶', color: '#607D8B' },
+          { 
+            id: 'save', 
+            label: '保存', 
+            command: 'save', 
+            icon: '💾', 
+            color: '#4CAF50',
+            action: () => executeEditorAction('save')
+          },
+          { 
+            id: 'copy', 
+            label: '复制', 
+            command: 'copy', 
+            icon: '📋', 
+            color: '#2196F3',
+            action: () => executeEditorAction('copy')
+          },
+          { 
+            id: 'paste', 
+            label: '粘贴', 
+            command: 'paste', 
+            icon: '📄', 
+            color: '#FF9800',
+            action: () => executeEditorAction('paste')
+          },
+          { 
+            id: 'cut', 
+            label: '剪切', 
+            command: 'cut', 
+            icon: '✂️', 
+            color: '#F44336',
+            action: () => executeEditorAction('cut')
+          },
+          { 
+            id: 'undo', 
+            label: '撤销', 
+            command: 'undo', 
+            icon: '↶', 
+            color: '#607D8B',
+            action: () => executeEditorAction('undo')
+          },
+          { 
+            id: 'indent', 
+            label: '缩进', 
+            command: 'indent', 
+            icon: '→', 
+            color: '#9C27B0',
+            action: () => executeEditorAction('indent')
+          },
+          { 
+            id: 'newFile', 
+            label: '新文件', 
+            command: 'new_file', 
+            icon: '📄', 
+            color: '#4CAF50',
+            action: () => executeEditorAction('new_file')
+          },
+          { 
+            id: 'lineNumbers', 
+            label: '行号', 
+            command: 'toggle_line_numbers', 
+            icon: '#', 
+            color: '#00BCD4',
+            action: () => executeEditorAction('toggle_line_numbers')
+          },
         ];
         
       case 'forward':
         return [
-          { id: 'back', label: '后退', command: 'back', icon: '←', color: '#607D8B' },
-          { id: 'forward', label: '前进', command: 'forward', icon: '→', color: '#607D8B' },
-          { id: 'refresh', label: '刷新', command: 'refresh', icon: '🔄', color: '#4CAF50' },
-          { id: 'stop', label: '停止', command: 'stop', icon: '⏹️', color: '#F44336' },
-          { id: 'screenshot', label: '截图', command: 'screenshot', icon: '📷', color: '#9C27B0' },
-          { id: 'bookmark', label: '收藏', command: 'bookmark', icon: '⭐', color: '#FF9800' },
+          { 
+            id: 'back', 
+            label: '后退', 
+            command: 'back', 
+            icon: '←', 
+            color: '#607D8B',
+            action: () => executeForwardAction('back')
+          },
+          { 
+            id: 'forward', 
+            label: '前进', 
+            command: 'forward', 
+            icon: '→', 
+            color: '#607D8B',
+            action: () => executeForwardAction('forward')
+          },
+          { 
+            id: 'refresh', 
+            label: '刷新', 
+            command: 'refresh', 
+            icon: '🔄', 
+            color: '#4CAF50',
+            action: () => executeForwardAction('refresh')
+          },
+          { 
+            id: 'stop', 
+            label: '停止', 
+            command: 'stop', 
+            icon: '⏹️', 
+            color: '#F44336',
+            action: () => executeForwardAction('stop')
+          },
+          { 
+            id: 'screenshot', 
+            label: '截图', 
+            command: 'screenshot', 
+            icon: '📷', 
+            color: '#9C27B0',
+            action: () => executeForwardAction('screenshot')
+          },
+          { 
+            id: 'bookmark', 
+            label: '收藏', 
+            command: 'bookmark', 
+            icon: '⭐', 
+            color: '#FF9800',
+            action: () => executeForwardAction('bookmark')
+          },
         ];
         
       case 'terminal':
         return [
-          { id: 'ls', label: 'ls', command: 'ls -la', icon: '📋', color: '#4CAF50' },
-          { id: 'pwd', label: 'pwd', command: 'pwd', icon: '📍', color: '#2196F3' },
-          { id: 'clear', label: 'clear', command: 'clear', icon: '🧹', color: '#FF9800' },
-          { id: 'top', label: 'top', command: 'top', icon: '📊', color: '#9C27B0' },
-          { id: 'ps', label: 'ps', command: 'ps aux', icon: '⚙️', color: '#607D8B' },
-          { id: 'df', label: 'df', command: 'df -h', icon: '💾', color: '#F44336' },
-          { id: 'history', label: 'history', command: 'history', icon: '📜', color: '#795548' },
-          { id: 'exit', label: 'exit', command: 'exit', icon: '🚪', color: '#E91E63' },
+          { 
+            id: 'ls', 
+            label: 'ls', 
+            command: 'ls -la', 
+            icon: '📋', 
+            color: '#4CAF50',
+            action: () => executeTerminalAction('ls -la')
+          },
+          { 
+            id: 'pwd', 
+            label: 'pwd', 
+            command: 'pwd', 
+            icon: '📍', 
+            color: '#2196F3',
+            action: () => executeTerminalAction('pwd')
+          },
+          { 
+            id: 'clear', 
+            label: 'clear', 
+            command: 'clear', 
+            icon: '🧹', 
+            color: '#FF9800',
+            action: () => executeTerminalAction('clear')
+          },
+          { 
+            id: 'top', 
+            label: 'top', 
+            command: 'top', 
+            icon: '📊', 
+            color: '#9C27B0',
+            action: () => executeTerminalAction('top')
+          },
+          { 
+            id: 'ps', 
+            label: 'ps', 
+            command: 'ps aux', 
+            icon: '⚙️', 
+            color: '#607D8B',
+            action: () => executeTerminalAction('ps aux')
+          },
+          { 
+            id: 'df', 
+            label: 'df', 
+            command: 'df -h', 
+            icon: '💾', 
+            color: '#F44336',
+            action: () => executeTerminalAction('df -h')
+          },
+          { 
+            id: 'history', 
+            label: 'history', 
+            command: 'history', 
+            icon: '📜', 
+            color: '#795548',
+            action: () => executeTerminalAction('history')
+          },
+          { 
+            id: 'nano', 
+            label: 'nano', 
+            command: 'nano', 
+            icon: '📝', 
+            color: '#00BCD4',
+            action: () => executeTerminalAction('nano')
+          },
         ];
         
       default:
@@ -95,108 +429,21 @@ const QuickToolComponent: React.FC<QuickToolComponentProps> = ({
 
   const toolButtons = getToolButtons();
 
-  // 处理工具按钮点击 - 实现真正功能
+  // 处理工具按钮点击
   const handleToolClick = (tool: ToolButton) => {
-    console.log('执行快捷命令:', tool.command);
+    console.log('执行快捷操作:', tool.command);
     
-    if (!moduleRefs?.current) {
-      console.warn('Module refs not available');
-      return;
-    }
-
-    try {
-      switch (activeModule) {
-        case 'file':
-          switch (tool.command) {
-            case 'copy':
-              moduleRefs.current.fileManager?.copy();
-              break;
-            case 'paste':
-              moduleRefs.current.fileManager?.paste();
-              break;
-            case 'cut':
-              moduleRefs.current.fileManager?.cut();
-              break;
-            case 'delete':
-              moduleRefs.current.fileManager?.delete();
-              break;
-            case 'new_file':
-              moduleRefs.current.fileManager?.newFile();
-              break;
-            case 'new_dir':
-              moduleRefs.current.fileManager?.newDir();
-              break;
-            case 'refresh':
-              moduleRefs.current.fileManager?.refresh();
-              break;
-          }
-          break;
-          
-        case 'editor':
-          switch (tool.command) {
-            case 'copy':
-              moduleRefs.current.editor?.copy();
-              break;
-            case 'paste':
-              moduleRefs.current.editor?.paste();
-              break;
-            case 'cut':
-              moduleRefs.current.editor?.cut();
-              break;
-            case 'backspace':
-              moduleRefs.current.editor?.insertText('\b');
-              break;
-            case 'delete':
-              moduleRefs.current.editor?.insertText('\x7f');
-              break;
-            case 'indent':
-              moduleRefs.current.editor?.indent();
-              break;
-            case 'save':
-              moduleRefs.current.editor?.save();
-              break;
-            case 'undo':
-              moduleRefs.current.editor?.undo();
-              break;
-          }
-          break;
-          
-        case 'forward':
-          switch (tool.command) {
-            case 'back':
-              moduleRefs.current.forward?.goBack();
-              break;
-            case 'forward':
-              moduleRefs.current.forward?.goForward();
-              break;
-            case 'refresh':
-              moduleRefs.current.forward?.refresh();
-              break;
-            case 'stop':
-              moduleRefs.current.forward?.stop();
-              break;
-            case 'screenshot':
-              moduleRefs.current.forward?.screenshot();
-              break;
-            case 'bookmark':
-              moduleRefs.current.forward?.bookmark();
-              break;
-          }
-          break;
-          
-        case 'terminal':
-          // 终端的快捷命令直接发送到终端执行
-          if (tool.command.includes(' ')) {
-            // 如果是完整命令（如 'ls -la'），直接执行
-            moduleRefs.current.terminal?.executeCommand?.(tool.command);
-          } else {
-            // 如果是单个命令，也直接执行
-            moduleRefs.current.terminal?.executeCommand?.(tool.command);
-          }
-          break;
+    if (tool.action) {
+      // 执行直接动作
+      try {
+        tool.action();
+      } catch (error) {
+        console.error('Tool action error:', error);
+        Alert.alert('操作失败', `执行 "${tool.label}" 时出错`);
       }
-    } catch (error) {
-      console.error('Failed to execute quick tool command:', error);
+    } else {
+      // 回退到命令模式
+      onInputCommand(tool.command);
     }
   };
 
@@ -212,6 +459,17 @@ const QuickToolComponent: React.FC<QuickToolComponentProps> = ({
 
   const buttonSize = getButtonSize();
 
+  // 获取模块显示名称
+  const getModuleName = () => {
+    switch (activeModule) {
+      case 'file': return '文件管理';
+      case 'editor': return '编辑器';
+      case 'forward': return '转发浏览';
+      case 'terminal': return '终端';
+      default: return '未知模块';
+    }
+  };
+
   return (
     <View style={styles.container}>
       
@@ -226,7 +484,7 @@ const QuickToolComponent: React.FC<QuickToolComponentProps> = ({
         </TouchableOpacity>
         
         {/* 右上角：快捷工具标题 */}
-        <Text style={styles.title}>快捷工具</Text>
+        <Text style={styles.title}>{getModuleName()} - 快捷工具</Text>
       </View>
 
       {/* 快捷按钮区域 */}
@@ -237,37 +495,6 @@ const QuickToolComponent: React.FC<QuickToolComponentProps> = ({
           style={styles.buttonsScroll}
           contentContainerStyle={styles.buttonsContent}
         >
-          {/* 添加自定义工具按钮（终端模块特有） */}
-          {activeModule === 'terminal' && (
-            <TouchableOpacity
-              style={[
-                styles.toolButton,
-                styles.addButton,
-                {
-                  width: buttonSize.width,
-                  height: buttonSize.height,
-                }
-              ]}
-              onPress={() => {
-                // TODO: 将来实现添加自定义命令功能
-                console.log('添加自定义命令（待实现）');
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={[
-                styles.toolIcon,
-                { fontSize: buttonSize.iconSize }
-              ]}>
-                ➕
-              </Text>
-              <Text style={[
-                styles.toolLabel,
-                { fontSize: buttonSize.fontSize }
-              ]}>
-                添加
-              </Text>
-            </TouchableOpacity>
-          )}
           {toolButtons.map((tool) => (
             <TouchableOpacity
               key={tool.id}
@@ -296,6 +523,48 @@ const QuickToolComponent: React.FC<QuickToolComponentProps> = ({
               </Text>
             </TouchableOpacity>
           ))}
+          
+          {/* 自定义命令按钮（终端模块特有） */}
+          {activeModule === 'terminal' && (
+            <TouchableOpacity
+              style={[
+                styles.toolButton,
+                styles.addButton,
+                {
+                  width: buttonSize.width,
+                  height: buttonSize.height,
+                }
+              ]}
+              onPress={() => {
+                Alert.prompt(
+                  '自定义命令',
+                  '输入要执行的命令:',
+                  (command) => {
+                    if (command && command.trim()) {
+                      executeTerminalAction(command.trim());
+                    }
+                  },
+                  'plain-text',
+                  '',
+                  'default'
+                );
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                styles.toolIcon,
+                { fontSize: buttonSize.iconSize }
+              ]}>
+                ➕
+              </Text>
+              <Text style={[
+                styles.toolLabel,
+                { fontSize: buttonSize.fontSize }
+              ]}>
+                自定义
+              </Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </View>
     </View>

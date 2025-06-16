@@ -50,3 +50,19 @@ npx react-native run-android
 npx react-native start
 
 npx react-native log-android
+
+cd android
+./gradlew clean
+./gradlew assembleRelease
+adb install app/build/outputs/apk/release/app-release.apk
+
+# 清理Android构建缓存
+cd android
+rm -rf build
+rm -rf app/build
+rm -rf app/.cxx
+rm -rf .gradle
+
+# 清理gradlew缓存
+./gradlew clean || true
+

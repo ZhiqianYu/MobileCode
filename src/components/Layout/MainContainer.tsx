@@ -1,5 +1,5 @@
 // src/components/Layout/MainContainer.tsx
-// 功能：0号容器，管理4个基础组件的布局，简化版仅支持点击显示/隐藏，配合编辑器焦点保持
+// 功能：0号容器，管理4个基础组件的布局，简化版仅支持点击显示/隐藏
 // 依赖：4个基础组件，布局状态管理，安全区域适配
 // 被使用：App.tsx
 
@@ -55,9 +55,6 @@ const MainContainer: React.FC = () => {
   // 键盘高度状态
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   
-  // MainContent组件引用，用于调用各模块方法
-  const mainContentRef = useRef<any>(null);
-  
   // 根据全屏设置计算实际可用高度
   const availableHeight = (settings.fullScreen 
     ? screenHeight  // 全屏模式使用全部高度
@@ -81,6 +78,9 @@ const MainContainer: React.FC = () => {
   
   // 尺寸配置
   const [sizeConfig, setSizeConfig] = useState<SizeConfig>('medium');
+  
+  // MainContent的ref
+  const mainContentRef = useRef<any>(null);
   
   // 动态控制状态栏和导航栏显示
   useEffect(() => {    
@@ -282,149 +282,127 @@ const MainContainer: React.FC = () => {
     closeConnectionDrawer();
   };
 
-  // 处理快捷工具命令 - 增强版，支持焦点保持
+  // 处理快捷工具命令
   const handleQuickToolCommand = (command: string) => {
-    console.log('QuickTool command:', command, 'Active module:', activeModule);
+    console.log('执行快捷命令:', command);
     
     if (!mainContentRef.current) {
-      console.warn('MainContent ref not available');
+      console.warn('Module refs not available');
       return;
     }
 
     try {
       switch (activeModule) {
         case 'file':
-          // 文件管理器命令
-          switch (command) {
-            case 'copy':
-              mainContentRef.current.fileManager?.copy();
-              break;
-            case 'paste':
-              mainContentRef.current.fileManager?.paste();
-              break;
-            case 'cut':
-              mainContentRef.current.fileManager?.cut();
-              break;
-            case 'delete':
-              mainContentRef.current.fileManager?.delete();
-              break;
-            case 'new_file':
-              mainContentRef.current.fileManager?.newFile();
-              break;
-            case 'new_dir':
-              mainContentRef.current.fileManager?.newDir();
-              break;
-            case 'refresh':
-              mainContentRef.current.fileManager?.refresh();
-              break;
+          const fileManager = mainContentRef.current.fileManager;
+          if (fileManager) {
+            switch (command) {
+              case 'copy': fileManager.copy(); break;
+              case 'paste': fileManager.paste(); break;
+              case 'cut': fileManager.cut(); break;
+              case 'delete': fileManager.delete(); break;
+              case 'new_file': fileManager.newFile(); break;
+              case 'new_dir': fileManager.newDir(); break;
+              case 'refresh': fileManager.refresh(); break;
+              default: console.log('未知文件命令:', command);
+            }
           }
           break;
-
+          
         case 'editor':
-          // 编辑器命令 - 需要保持焦点
-          switch (command) {
-            case 'copy':
-              mainContentRef.current.editor?.copy();
-              break;
-            case 'paste':
-              mainContentRef.current.editor?.paste();
-              break;
-            case 'cut':
-              mainContentRef.current.editor?.cut();
-              break;
-            case 'backspace':
-              // 发送退格字符
-              mainContentRef.current.editor?.insertText('\b');
-              break;
-            case 'delete':
-              // 发送删除字符
-              mainContentRef.current.editor?.insertText('\x7f');
-              break;
-            case 'indent':
-              mainContentRef.current.editor?.indent();
-              break;
-            case 'save':
-              mainContentRef.current.editor?.save();
-              break;
-            case 'undo':
-              mainContentRef.current.editor?.undo();
-              break;
+          const editor = mainContentRef.current.editor;
+          if (editor) {
+            switch (command) {
+              case 'copy': editor.copy(); break;
+              case 'paste': editor.paste(); break;
+              case 'cut': editor.cut(); break;
+              case 'save': editor.save(); break;
+              case 'undo': editor.undo(); break;
+              case 'indent': editor.indent(); break;
+              default: console.log('未知编辑器命令:', command);
+            }
           }
           break;
-
-        case 'forward':
-          // 转发浏览器命令
-          switch (command) {
-            case 'back':
-              mainContentRef.current.forward?.goBack();
-              break;
-            case 'forward':
-              mainContentRef.current.forward?.goForward();
-              break;
-            case 'refresh':
-              mainContentRef.current.forward?.refresh();
-              break;
-            case 'stop':
-              mainContentRef.current.forward?.stop();
-              break;
-            case 'screenshot':
-              mainContentRef.current.forward?.screenshot();
-              break;
-            case 'bookmark':
-              mainContentRef.current.forward?.bookmark();
-              break;
-          }
-          break;
-
+          
         case 'terminal':
-          // 终端命令
-          if (command === 'clear') {
-            mainContentRef.current.terminal?.clearTerminal();
-          } else {
-            // 其他命令通过输入发送
+          const terminal = mainContentRef.current.terminal;
+          if (terminal && command !== 'clear') {
+            // 终端命令通过输入方式处理
             handleInputSend(command);
+          } else if (terminal && command === 'clear') {
+            terminal.clearTerminal();
           }
           break;
+          
+        case 'forward':
+          const forward = mainContentRef.current.forward;
+          if (forward) {
+            switch (command) {
+              case 'back': forward.goBack(); break;
+              case 'forward': forward.goForward(); break;
+              case 'refresh': forward.refresh(); break;
+              case 'stop': forward.stop(); break;
+              case 'screenshot': forward.screenshot(); break;
+              case 'bookmark': forward.bookmark(); break;
+              default: console.log('未知转发命令:', command);
+            }
+          }
+          break;
+          
+        default:
+          console.log('未知模块:', activeModule);
       }
     } catch (error) {
-      console.error('Error executing quick tool command:', error);
+      console.error('执行命令失败:', error);
     }
   };
 
-  // 处理输入栏发送 - 增强版，支持焦点保持
+  // 处理输入栏发送
   const handleInputSend = (input: string) => {
-    console.log('Input send:', input, 'Active module:', activeModule);
+    console.log('发送输入:', input);
     
     if (!mainContentRef.current) {
-      console.warn('MainContent ref not available');
+      console.warn('Module refs not available');
       return;
     }
 
     try {
       switch (activeModule) {
-        case 'file':
-          // 文件管理器：搜索文件
-          console.log('Search files:', input);
-          break;
-
-        case 'editor':
-          // 编辑器：插入文本
-          mainContentRef.current.editor?.insertText(input);
-          break;
-
-        case 'forward':
-          // 转发浏览器：导航到URL
-          mainContentRef.current.forward?.navigate(input);
-          break;
-
         case 'terminal':
-          // 终端：执行命令
-          // TODO: 通过SSH连接发送命令
-          console.log('Execute terminal command:', input);
+          // 终端命令直接发送到SSH
+          const terminal = mainContentRef.current.terminal;
+          if (terminal) {
+            // 这里可以调用终端的命令执行方法
+            console.log('向终端发送命令:', input);
+          }
           break;
+          
+        case 'editor':
+          // 编辑器插入文本
+          const editor = mainContentRef.current.editor;
+          if (editor) {
+            editor.insertText(input);
+          }
+          break;
+          
+        case 'forward':
+          // 转发模块导航到URL
+          const forward = mainContentRef.current.forward;
+          if (forward) {
+            forward.navigate(input);
+          }
+          break;
+          
+        case 'file':
+          // 文件模块可以用输入来搜索或创建文件
+          console.log('文件模块输入:', input);
+          break;
+          
+        default:
+          console.log('未知模块输入:', activeModule, input);
       }
     } catch (error) {
-      console.error('Error sending input:', error);
+      console.error('发送输入失败:', error);
     }
   };
 
@@ -466,6 +444,7 @@ const MainContainer: React.FC = () => {
             activeModule={activeModule}
             height={availableHeight - heights.topBar - (positions.mainContent.bottom || 0)}
             width={screenWidth}
+            onModuleSwitch={switchModule}
           />
         </View>
 
@@ -480,6 +459,7 @@ const MainContainer: React.FC = () => {
               sizeConfig={sizeConfig}
               onToggleVisibility={toggleQuickTool}
               onInputCommand={handleQuickToolCommand}
+              mainContentRef={mainContentRef}
             />
           </View>
         )}
