@@ -19,7 +19,7 @@
         android:launchMode="singleTask"
         android:windowSoftInputMode="adjustResize"
         android:exported="true"
-        android:theme="@style/AppTheme">  <!-- 确保使用正确的主题 -->
+        android:theme="@style/AppTheme">
         <intent-filter>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

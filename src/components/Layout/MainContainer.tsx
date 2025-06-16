@@ -85,6 +85,7 @@ const MainContainer: React.FC = () => {
       StatusBar.setBackgroundColor('#1a1a1a', true);
       StatusBar.setBarStyle('light-content', true);
       StatusBar.setTranslucent(false);
+      StatusBar.setHidden(false);
     } else {
       // 全屏模式：隐藏状态栏
       StatusBar.setBarStyle('light-content', true);
@@ -378,27 +379,6 @@ const styles = StyleSheet.create({
   // 绝对定位组件的通用样式
   absoluteComponent: {
     position: 'absolute',
-  },
-  // 开发阶段调试边框
-  debugMainContainer: {
-    borderWidth: 2,
-    borderColor: '#FFFF00', // 黄色 - 0号容器
-  },
-  debugTopBar: {
-    borderWidth: 2,
-    borderColor: '#FF0000', // 红色 - TopBar
-  },
-  debugMainContent: {
-    borderWidth: 2,
-    borderColor: '#0000FF', // 蓝色 - MainContent  
-  },
-  debugQuickTool: {
-    borderWidth: 2,
-    borderColor: '#FFFFFF', // 白色 - QuickTool
-  },
-  debugInputBar: {
-    borderWidth: 2,
-    borderColor: '#808080', // 灰色 - InputBar
   },
 });
 
