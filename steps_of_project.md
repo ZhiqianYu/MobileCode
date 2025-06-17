@@ -53,6 +53,9 @@ npx react-native log-android
 
 cd android
 ./gradlew clean
+cd ..
+npx react-native start --reset-cache
+
 ./gradlew assembleRelease
 adb install app/build/outputs/apk/release/app-release.apk
 
@@ -65,4 +68,9 @@ rm -rf .gradle
 
 # 清理gradlew缓存
 ./gradlew clean || true
+
+npm ls 命令查看已安装的依赖树，确认没有未使用的包
+npm outdated 检查是否有需要更新的依赖
+
+
 
