@@ -603,59 +603,33 @@ const SimpleFileManager = React.forwardRef<any, SimpleFileManagerProps>((props, 
   // 原来的 renderFolderList 函数删除，用上面的替换
 
   // 浏览特定文件夹（支持分页）
-  const handleBrowseFolder = useCallback(async (folder: any) => {
+  const handleBrowseFolder = useCallback(async (folder: AuthorizedFolder) => {
     try {
       setCurrentFolder(folder);
       setFileMode('browseFolder');
       setIsLoading(true);
-      setFileOffset(0);
-      setHasMoreFiles(true);
-      
-      console.log('浏览文件夹:', folder.name, folder.uri);
-      
-      // 构建根文件夹节点
-      const rootNode: TreeNode = {
-        name: folder.name,
-        type: 'directory',
-        uri: folder.uri,
-        icon: '📁',
-        level: 0,
-        isExpanded: true,
-      };
 
-      // 构建文件树（带分页）
-      const { nodes: children, hasMore } = await buildSystemFileTree(folder.uri, 1, 0, FILES_PER_PAGE);
-      setHasMoreFiles(hasMore);
-      
-      // 更新文件夹信息（检查folder.id是否存在）
+      // 构建文件树
+      const { nodes } = await buildSystemFileTree(folder.uri);
+      setTreeNodes(nodes);
+
+      // 只有在文件夹ID有效时才更新
       if (folder.id) {
-        try {
-          await updateFolder(folder.id, { 
-            itemCount: children.length,
-            lastAccessed: new Date()
-          });
-        } catch (updateError) {
-          console.warn('更新文件夹信息失败:', updateError);
-        }
+        console.log('准备更新文件夹:', folder.id);
+        await updateFolder(folder.id, { 
+          lastAccessed: new Date(),
+          itemCount: nodes.length 
+        });
       } else {
-        console.warn('文件夹缺少id，跳过更新:', folder);
+        console.warn('文件夹缺少ID，跳过更新:', folder);
       }
-      
-      const allNodes = [rootNode, ...children];
-      setSystemRoots([rootNode]);
-      setTreeNodes(allNodes);
-      setRootPath(folder.uri);
-      setFileOffset(FILES_PER_PAGE);
-      
-      console.log('文件夹浏览完成:', allNodes.length, '个节点', hasMore ? '(有更多)' : '');
     } catch (error) {
       console.error('浏览文件夹失败:', error);
-      Alert.alert('访问失败', `无法访问文件夹: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
   }, [buildSystemFileTree, updateFolder]);
-
+  
   // 加载更多文件
   const loadMoreFiles = useCallback(async () => {
     if (!hasMoreFiles || loadingMore || !currentFolder) return;

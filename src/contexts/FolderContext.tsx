@@ -268,32 +268,29 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // 更新文件夹
   const updateFolder = async (id: string, updates: Partial<AuthorizedFolder>) => {
-    try {
-      if (!id) {
-        console.error('✗ updateFolder: id不能为空');
-        return;
-      }
-
-      const folderIndex = authorizedFolders.findIndex(f => f.id === id);
-      if (folderIndex === -1) {
-        console.warn('✗ updateFolder: 找不到文件夹', id);
-        return;
-      }
-
-      const newFolders = [...authorizedFolders];
-      newFolders[folderIndex] = { 
-        ...newFolders[folderIndex], 
-        ...updates, 
-        lastAccessed: new Date() 
-      };
-      
-      setAuthorizedFolders(newFolders);
-      await saveFoldersToStorage(newFolders);
-      console.log('✓ 更新文件夹:', id);
-    } catch (error) {
-      console.error('✗ 更新文件夹失败:', error);
-      throw error;
+    if (!id) {
+      console.warn('updateFolder: 缺少文件夹ID');
+      return;
     }
+
+    const folderIndex = authorizedFolders.findIndex(f => f.id === id);
+    if (folderIndex === -1) {
+      console.warn(`找不到ID为 ${id} 的文件夹，现有IDs:`, authorizedFolders.map(f => f.id));
+      return;
+    }
+
+    const updatedFolder = { 
+      ...authorizedFolders[folderIndex],
+      ...updates,
+      lastAccessed: new Date() 
+    };
+
+    const newFolders = [...authorizedFolders];
+    newFolders[folderIndex] = updatedFolder;
+
+    setAuthorizedFolders(newFolders);
+    await saveFoldersToStorage(newFolders);
+    console.log(`成功更新文件夹 ${id}`);
   };
 
   // 获取单个文件夹
@@ -305,45 +302,47 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const syncWithSystemPermissions = async () => {
     setIsLoading(true);
     try {
-      // 获取系统权限并统一格式
-      const systemUris = (await getPersistedUriPermissions()).map(cleanUri);
-      console.log('系统权限(清理后):', systemUris);
+      // 获取原始权限列表
+      const rawPermissions = await getPersistedUriPermissions();
+      console.log('原始系统权限:', rawPermissions);
       
-      // 加载现有文件夹
+      // 清理并去重
+      const systemUris = [...new Set(rawPermissions.map(cleanUri))];
+      console.log('清理后的系统权限:', systemUris);
+
+      // 与现有文件夹比对
       const currentFolders = await loadFoldersFromStorage();
-      const currentUris = currentFolders.map(f => cleanUri(f.uri));
-      
-      // 找出需要删除的文件夹（本地有但系统无权限）
-      const foldersToKeep = currentFolders.filter(folder => 
+      const validFolders = currentFolders.filter(folder => 
         systemUris.includes(cleanUri(folder.uri))
       );
-      
-      // 找出需要添加的新权限
-      const newUris = systemUris.filter(uri => 
-        !currentUris.includes(uri)
-      );
-      
-      // 添加新文件夹
-      const newFolders = newUris.map(uri => ({
-        id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        name: extractFolderNameFromUri(uri),
-        uri: uri,
-        originalKey: extractOriginalKey(uri),
-        lastAccessed: new Date(),
-        createdAt: new Date(),
-        itemCount: 0
-      }));
-      
-      const finalFolders = [...foldersToKeep, ...newFolders];
+
+      // 添加缺失的权限
+      const existingUris = validFolders.map(f => cleanUri(f.uri));
+      const newFolders = systemUris
+        .filter(uri => !existingUris.includes(uri))
+        .map(uri => createNewFolder(uri));
+
+      const finalFolders = [...validFolders, ...newFolders];
       await saveFoldersToStorage(finalFolders);
       setAuthorizedFolders(finalFolders);
       
-      console.log('同步完成. 总数:', finalFolders.length);
+      console.log('同步完成，有效文件夹:', finalFolders.length);
       return finalFolders;
     } finally {
       setIsLoading(false);
     }
   };
+
+  // 辅助函数
+  const createNewFolder = (uri: string): AuthorizedFolder => ({
+    id: `folder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: extractFolderNameFromUri(uri),
+    uri,
+    originalKey: extractOriginalKey(uri),
+    createdAt: new Date(),
+    lastAccessed: new Date(),
+    itemCount: 0
+  });
 
   // 组件挂载时加载数据并恢复
   useEffect(() => {
