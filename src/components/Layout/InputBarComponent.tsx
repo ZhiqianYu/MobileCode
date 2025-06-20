@@ -19,13 +19,15 @@ interface InputBarComponentProps {
   activeModule: ModuleType;
   sizeConfig: SizeConfig;
   onToggleVisibility: () => void;
-  moduleRefs: React.RefObject<any>; // 新增：模块访问权限
+  onSendInput: (input: string) => void; // 🔥 修复：添加缺失的接口定义
+  moduleRefs?: React.RefObject<any>; // 保持可选，避免破坏现有调用
 }
 
 const InputBarComponent: React.FC<InputBarComponentProps> = ({
   activeModule,
   sizeConfig,
   onToggleVisibility,
+  onSendInput, // 🔥 修复：添加到props解构中
   moduleRefs,
 }) => {
   const [inputText, setInputText] = useState('');
@@ -71,49 +73,16 @@ const InputBarComponent: React.FC<InputBarComponentProps> = ({
     return configs[sizeConfig];
   };
 
-  // 处理发送 - 实现真正功能
+  // 🔥 修复：统一使用 onSendInput 而不是直接操作 moduleRefs
   const handleSend = () => {
     if (!inputText.trim()) return;
     
-    if (!moduleRefs?.current) {
-      console.warn('Module refs not available');
-      return;
-    }
-
     const input = inputText.trim();
     console.log('发送输入到', activeModule, ':', input);
 
-    try {
-      switch (activeModule) {
-        case 'file':
-          console.log('文件管理输入:', input);
-          break;
-          
-        case 'editor':
-          // 编辑器：将输入插入到当前光标位置
-          moduleRefs.current.editor?.insertText(input);
-          // 重新聚焦编辑器
-          setTimeout(() => {
-            moduleRefs.current.editor?.refocus();
-          }, 100);
-          break;
-          
-        case 'forward':
-          moduleRefs.current.forward?.navigate(input);
-          break;
-          
-        case 'terminal':
-          moduleRefs.current.terminal?.executeCommand?.(input);
-          break;
-          
-        default:
-          console.warn('Unknown module:', activeModule);
-      }
-      
-      setInputText(''); // 清空输入框
-    } catch (error) {
-      console.error('Failed to send input:', error);
-    }
+    // 🔥 修复：使用传入的回调函数
+    onSendInput(input);
+    setInputText(''); // 清空输入框
   };
 
   // 处理回车键

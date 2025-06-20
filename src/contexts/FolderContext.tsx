@@ -17,18 +17,23 @@ export interface AuthorizedFolder {
   lastAccessed: Date;
   createdAt: Date;
   itemCount?: number;
+  fingerprint?: string;
   isParentFolder?: boolean; // 标记是否为父文件夹（包含子权限）
 }
 
 interface FolderContextState {
   authorizedFolders: AuthorizedFolder[];
+  isLoading: boolean;
+  isUpdatingCounts: boolean;  // 新增：是否正在更新项目数量
   addFolder: (folder: Omit<AuthorizedFolder, 'id' | 'createdAt' | 'originalKey'>) => Promise<AuthorizedFolder>;
   removeFolder: (id: string) => Promise<void>;
-  revokePermission: (uri: string) => Promise<void>; // 新增：撤销权限
+  revokePermission: (uri: string) => Promise<void>;
   updateFolder: (id: string, updates: Partial<AuthorizedFolder>) => Promise<void>;
   getFolder: (id: string) => AuthorizedFolder | undefined;
   syncWithSystemPermissions: () => Promise<void>;
-  isLoading: boolean;
+  updateFolderItemCount: (folder: AuthorizedFolder) => Promise<number>;
+  updateAllFolderItemCounts: () => Promise<void>;
+  smartUpdateFolderItemCounts: () => Promise<void>;
 }
 
 const FolderContext = createContext<FolderContextState | null>(null);
@@ -36,6 +41,7 @@ const FolderContext = createContext<FolderContextState | null>(null);
 export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [authorizedFolders, setAuthorizedFolders] = useState<AuthorizedFolder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isUpdatingCounts, setIsUpdatingCounts] = useState(false);  // 新增
 
   const cleanUri = (uri: string) => {
     if (!uri) return '';
@@ -216,11 +222,31 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return updatedFolder;
       }
       
+      // 🔥 检查是否有同名文件夹，如果有则添加存储位置标识
+      const originalKey = extractOriginalKey(folderData.uri);
+      const storageId = originalKey.split(':')[0]; // 提取存储ID
+      
+      let displayName = folderData.name;
+      const sameNameFolders = authorizedFolders.filter(f => 
+        f.name === folderData.name || f.name.startsWith(folderData.name + ' (')
+      );
+      
+      if (sameNameFolders.length > 0) {
+        // 🔥 根据存储位置生成唯一名称
+        const storageLabel = storageId === 'primary' ? '内置存储' : 
+                            storageId.startsWith('4A21') ? 'SD卡' : 
+                            `外部存储(${storageId})`;
+        displayName = `${folderData.name} (${storageLabel})`;
+        
+        console.log('📁 检测到重名文件夹，重命名为:', displayName);
+      }
+      
       // 添加新文件夹
       const newFolder: AuthorizedFolder = {
         ...folderData,
+        name: displayName, // 🔥 使用处理后的名称
         id: `folder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        originalKey: extractOriginalKey(folderData.uri),
+        originalKey: originalKey,
         createdAt: new Date(),
         lastAccessed: new Date(),
       };
@@ -275,22 +301,28 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const folderIndex = authorizedFolders.findIndex(f => f.id === id);
     if (folderIndex === -1) {
-      console.warn(`找不到ID为 ${id} 的文件夹，现有IDs:`, authorizedFolders.map(f => f.id));
+      console.warn(`找不到ID为 ${id} 的文件夹`);
       return;
     }
 
-    const updatedFolder = { 
-      ...authorizedFolders[folderIndex],
-      ...updates,
-      lastAccessed: new Date() 
-    };
+    try {
+      const updatedFolder = { 
+        ...authorizedFolders[folderIndex],
+        ...updates,
+        lastAccessed: new Date() 
+      };
 
-    const newFolders = [...authorizedFolders];
-    newFolders[folderIndex] = updatedFolder;
+      const newFolders = [...authorizedFolders];
+      newFolders[folderIndex] = updatedFolder;
 
-    setAuthorizedFolders(newFolders);
-    await saveFoldersToStorage(newFolders);
-    console.log(`成功更新文件夹 ${id}`);
+      // 🔥 批量更新，减少状态变化
+      setAuthorizedFolders(newFolders);
+      await saveFoldersToStorage(newFolders);
+      
+      console.log(`📁 文件夹已更新: ${updatedFolder.name}`);
+    } catch (error) {
+      console.error('更新文件夹失败:', error);
+    }
   };
 
   // 获取单个文件夹
@@ -299,7 +331,7 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   // 与系统权限同步
-  const syncWithSystemPermissions = async () => {
+  const syncWithSystemPermissions = async (): Promise<void> => {
     setIsLoading(true);
     try {
       // 获取原始权限列表
@@ -312,14 +344,24 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       // 与现有文件夹比对
       const currentFolders = await loadFoldersFromStorage();
-      const validFolders = currentFolders.filter(folder => 
-        systemUris.includes(cleanUri(folder.uri))
-      );
+      const validFolders = currentFolders.filter(folder => {
+        const cleanedUri = cleanUri(folder.uri);
+        const hasSystemPermission = systemUris.includes(cleanedUri);
+        
+        // 过滤掉 Android/media 等系统目录
+        const isSystemDir = cleanedUri.includes('Android%2Fmedia') || 
+                          cleanedUri.includes('Android/media');
+        
+        console.log('检查文件夹:', folder.name, '权限:', hasSystemPermission, '系统目录:', isSystemDir);
+        
+        return hasSystemPermission && !isSystemDir;
+      });
 
       // 添加缺失的权限
       const existingUris = validFolders.map(f => cleanUri(f.uri));
       const newFolders = systemUris
         .filter(uri => !existingUris.includes(uri))
+        .filter(uri => !uri.includes('Android%2Fmedia') && !uri.includes('Android/media')) // 🔥 在这里过滤系统目录
         .map(uri => createNewFolder(uri));
 
       const finalFolders = [...validFolders, ...newFolders];
@@ -333,16 +375,116 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
+  // 更新单个文件夹的项目数量（暂时移除指纹检测）
+  const updateFolderItemCount = async (folder: AuthorizedFolder): Promise<number> => {
+    try {
+      console.log('📊 更新文件夹项目数:', folder.name);
+      const { listFiles } = require('react-native-scoped-storage');
+      const files = await listFiles(folder.uri);
+      const itemCount = files ? files.length : 0;
+      
+      console.log('📊 文件夹项目数结果:', folder.name, '数量:', itemCount);
+      
+      // 更新文件夹记录
+      await updateFolder(folder.id, { itemCount });
+      
+      return itemCount;
+    } catch (error) {
+      console.warn('📊 更新文件夹项目数失败:', folder.name, error);
+      return folder.itemCount || 0;
+    }
+  };
+
+
+  // 批量更新所有文件夹的项目数量
+  const updateAllFolderItemCounts = async (): Promise<void> => {
+    console.log('📊 开始批量更新文件夹项目数量...');
+    
+    const updatePromises = authorizedFolders.map(async (folder) => {
+      try {
+        return await updateFolderItemCount(folder);
+      } catch (error) {
+        console.warn('📊 单个文件夹更新失败:', folder.name, error);
+        return folder.itemCount || 0;
+      }
+    });
+    
+    try {
+      await Promise.all(updatePromises);
+      console.log('📊 所有文件夹项目数量更新完成');
+    } catch (error) {
+      console.warn('📊 批量更新过程中发生错误:', error);
+    }
+  };
+
+  // 智能更新：检查指纹和时间
+  const smartUpdateFolderItemCounts = async (): Promise<void> => {
+    console.log('🧠 智能更新文件夹项目数量...');
+    setIsUpdatingCounts(true);
+    
+    try {
+      const now = new Date();
+      const updateThreshold = 24 * 60 * 60 * 1000; // 24小时
+      
+      const foldersToUpdate = authorizedFolders.filter(folder => {
+        const lastAccessed = new Date(folder.lastAccessed);
+        const timeDiff = now.getTime() - lastAccessed.getTime();
+        
+        // 🔥 简化条件：超过时间阈值或没有项目数就更新
+        const needsUpdate = timeDiff > updateThreshold || !folder.itemCount;
+        
+        console.log('🧠 检查文件夹:', folder.name, '需要更新:', needsUpdate, '原因:', {
+          超时: timeDiff > updateThreshold,
+          无项目数: !folder.itemCount
+        });
+        
+        return needsUpdate;
+      });
+      
+      console.log('🧠 需要更新的文件夹数量:', foldersToUpdate.length);
+      
+      // 🔥 串行更新，避免并发问题
+      for (const folder of foldersToUpdate) {
+        try {
+          await updateFolderItemCount(folder);
+          // 添加小延迟
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (error) {
+          console.warn('🧠 单个文件夹更新失败:', folder.name, error);
+        }
+      }
+      
+      console.log('🧠 智能更新完成');
+    } catch (error) {
+      console.error('🧠 智能更新失败:', error);
+    } finally {
+      setIsUpdatingCounts(false);
+    }
+  };
+
   // 辅助函数
-  const createNewFolder = (uri: string): AuthorizedFolder => ({
-    id: `folder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    name: extractFolderNameFromUri(uri),
-    uri,
-    originalKey: extractOriginalKey(uri),
-    createdAt: new Date(),
-    lastAccessed: new Date(),
-    itemCount: 0
-  });
+  const createNewFolder = (uri: string): AuthorizedFolder => {
+    const originalKey = extractOriginalKey(uri);
+    const storageId = originalKey.split(':')[0];
+    const baseName = extractFolderNameFromUri(uri);
+    
+    // 🔥 自动为不同存储的同名文件夹添加标识
+    let displayName = baseName;
+    if (storageId !== 'primary') {
+      const storageLabel = storageId.startsWith('4A21') ? 'SD卡' : `外部存储(${storageId})`;
+      displayName = `${baseName} (${storageLabel})`;
+    }
+    
+    return {
+      id: `folder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: displayName,
+      uri,
+      originalKey: originalKey,
+      createdAt: new Date(),
+      lastAccessed: new Date(),
+      itemCount: 0
+    };
+  };
 
   // 组件挂载时加载数据并恢复
   useEffect(() => {
@@ -363,13 +505,17 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   return (
     <FolderContext.Provider value={{
       authorizedFolders,
+      isLoading,
+      isUpdatingCounts,  // 新增
       addFolder,
       removeFolder,
       revokePermission,
       updateFolder,
       getFolder,
       syncWithSystemPermissions,
-      isLoading,
+      updateFolderItemCount,
+      updateAllFolderItemCounts,
+      smartUpdateFolderItemCounts,
     }}>
       {children}
     </FolderContext.Provider>
